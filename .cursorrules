@@ -1,0 +1,127 @@
+# Personal Finance Tracker - Cursor Rules
+
+## Project Context
+Building a personal finance tracking MVP for real-time budget decisions. Focus on simplicity, type safety, and fast iteration.
+
+## Tech Stack
+- React 18 + TypeScript + Vite
+- Supabase (auth, database, real-time)
+- TanStack Query v5 for server state
+- Tailwind CSS for styling
+- shadcn/ui for components (optional but recommended)
+- Claude API for AI assistant
+
+## Code Style & Patterns
+
+### TypeScript
+- Use strict mode
+- Prefer interfaces for objects, types for unions/intersections
+- No `any` - use `unknown` if type is truly unknown
+- Use Zod for runtime validation where needed
+- Export types from separate `.types.ts` files
+
+### React
+- Functional components only
+- Use hooks (useState, useEffect, custom hooks)
+- Keep components small (<200 lines)
+- Co-locate related code (component + styles + types in same folder)
+- Use custom hooks for business logic extraction
+
+### TanStack Query
+- Use query keys as constants: `['liabilities', userId]`
+- Implement optimistic updates for mutations
+- Use `queryClient.invalidateQueries()` after mutations
+- Keep queries close to where they're used
+- Example pattern:
+```typescript
+const { data, isLoading } = useQuery({
+  queryKey: ['liabilities', userId],
+  queryFn: () => supabase.from('liabilities').select('*'),
+})
+```
+
+### Supabase
+- Use Row Level Security (RLS) policies
+- Type-safe queries using generated types
+- Handle errors gracefully with try-catch
+- Use real-time subscriptions sparingly (only for critical data)
+
+### File Structure
+src/
+├── components/
+│   ├── ui/              # shadcn components
+│   ├── dashboard/       # dashboard specific
+│   ├── expenses/        # expense related
+│   └── shared/          # reusable components
+├── hooks/
+│   ├── useAuth.ts
+│   ├── useLiabilities.ts
+│   └── useAffordability.ts
+├── lib/
+│   ├── supabase.ts      # client setup
+│   ├── queryClient.ts   # tanstack setup
+│   └── utils.ts
+├── types/
+│   ├── database.types.ts # generated from Supabase
+│   └── app.types.ts      # app-specific types
+├── services/
+│   ├── claude.ts         # AI API calls
+│   └── calculations.ts   # finance logic
+└── pages/
+├── Dashboard.tsx
+├── Expenses.tsx
+└── Settings.tsx
+
+### Naming Conventions
+- Components: PascalCase (UserProfile.tsx)
+- Hooks: camelCase with 'use' prefix (useAffordability.ts)
+- Utils: camelCase (formatCurrency.ts)
+- Constants: UPPER_SNAKE_CASE (QUERY_KEYS.ts)
+- Types/Interfaces: PascalCase (Liability, ExpenseItem)
+
+### Philippine-Specific Requirements
+- Currency: Always PHP (₱)
+- Date format: MM/DD/YYYY (PH standard)
+- Payment methods: Cash, GCash, PayMaya, Credit Cards (common PH cards)
+- Common loan apps: Atome, BillEase, Home Credit
+- E-commerce: Lazada, Shopee installments
+
+### Error Handling
+- Always handle Supabase errors
+- Show user-friendly error messages
+- Log errors to console in development
+- Use toast notifications for user feedback
+
+### Performance
+- Lazy load routes with React.lazy()
+- Memoize expensive calculations
+- Use TanStack Query's caching effectively
+- Optimize re-renders with React.memo where needed
+
+### Security
+- Never expose API keys in client code
+- Use environment variables for sensitive data
+- Validate all user inputs
+- Implement RLS policies on all Supabase tables
+
+### AI Integration
+- Use Claude API via edge function or backend proxy (never expose API key)
+- Send minimal context to AI (user's financial summary, not raw data)
+- Cache AI responses where appropriate
+- Handle API failures gracefully
+
+## DO's
+- Write self-documenting code
+- Use TypeScript strictly
+- Implement loading and error states
+- Test edge cases (negative numbers, large amounts)
+- Make it mobile-responsive (primary use case)
+- Add helpful comments for complex finance calculations
+
+## DON'Ts
+- Don't use class components
+- Don't ignore TypeScript errors
+- Don't store sensitive data in localStorage (use Supabase)
+- Don't make unnecessary API calls
+- Don't skip error boundaries
+- Don't hardcode values that should be configurable
