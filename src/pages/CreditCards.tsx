@@ -13,7 +13,6 @@ export function CreditCards() {
     deleteCreditCard,
     isCreating,
     isUpdating,
-    isDeleting,
   } = useCreditCards()
 
   const [isModalOpen, setIsModalOpen] = useState(false)

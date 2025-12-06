@@ -13,7 +13,6 @@ export function Liabilities() {
     deleteLiability,
     isCreating,
     isUpdating,
-    isDeleting,
   } = useLiabilities()
   
   const { creditCards } = useCreditCards()

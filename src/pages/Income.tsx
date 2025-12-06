@@ -13,7 +13,6 @@ export function Income() {
     deleteIncomeSource,
     isCreating,
     isUpdating,
-    isDeleting,
   } = useIncomeSources()
 
   const [isModalOpen, setIsModalOpen] = useState(false)
@@ -61,6 +60,7 @@ export function Income() {
       name: '',
       amount: '',
       frequency: 'monthly',
+      category: 'salary',
       next_payment_date: '',
       payment_date: '',
     })
@@ -78,6 +78,7 @@ export function Income() {
       name: formData.name,
       amount,
       frequency: formData.frequency,
+      category: formData.category,
       next_payment_date: formData.next_payment_date || null,
       payment_date: formData.payment_date || null,
     }

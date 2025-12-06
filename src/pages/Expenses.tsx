@@ -24,7 +24,6 @@ export function Expenses() {
     deleteExpense,
     isCreating,
     isUpdating,
-    isDeleting,
   } = useExpenses()
 
   const [isModalOpen, setIsModalOpen] = useState(false)

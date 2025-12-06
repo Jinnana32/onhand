@@ -4,9 +4,6 @@ import { formatCurrency, getDaysUntilDue } from '../lib/utils'
 export function UpcomingBills() {
   const { liabilities, isLoading } = useLiabilities()
 
-  const currentDate = new Date()
-  const currentDay = currentDate.getDate()
-
   // Get upcoming bills in the next 7 days
   const upcomingBills = liabilities
     .filter((liability) => {
