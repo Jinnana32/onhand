@@ -1,9 +1,9 @@
-import { ReactNode, useState } from 'react'
-import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { supabase } from '../lib/supabase'
+import { ReactNode, useState } from 'react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { supabase } from '../lib/supabase';
 
 interface LayoutProps {
-  children: ReactNode
+  children: ReactNode;
 }
 
 const navigation = [
@@ -15,21 +15,21 @@ const navigation = [
   { name: 'Income', href: '/income', icon: '💰' },
   { name: 'Expenses', href: '/expenses', icon: '🛒' },
   { name: 'AI Assistant', href: '/assistant', icon: '🤖' },
-]
+];
 
 export function Layout({ children }: LayoutProps) {
-  const navigate = useNavigate()
-  const location = useLocation()
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const navigate = useNavigate();
+  const location = useLocation();
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const handleSignOut = async () => {
-    await supabase.auth.signOut()
-    navigate('/auth')
-  }
+    await supabase.auth.signOut();
+    navigate('/auth');
+  };
 
   const handleLinkClick = () => {
-    setMobileMenuOpen(false)
-  }
+    setMobileMenuOpen(false);
+  };
 
   return (
     <div className="min-h-screen bg-gray-50 flex">
@@ -38,12 +38,12 @@ export function Layout({ children }: LayoutProps) {
         <div className="flex flex-col w-64">
           <div className="flex flex-col flex-grow bg-white border-r border-gray-200 pt-5 pb-4 overflow-y-auto">
             <div className="flex items-center flex-shrink-0 px-4">
-              <h1 className="text-xl font-bold text-gray-900">SolBills</h1>
+              <h1 className="text-xl font-bold text-gray-900">OnHands</h1>
             </div>
             <div className="mt-5 flex-grow flex flex-col">
               <nav className="flex-1 px-2 space-y-1">
                 {navigation.map((item) => {
-                  const isActive = location.pathname === item.href
+                  const isActive = location.pathname === item.href;
                   return (
                     <Link
                       key={item.name}
@@ -57,7 +57,7 @@ export function Layout({ children }: LayoutProps) {
                       <span className="mr-3 text-lg">{item.icon}</span>
                       {item.name}
                     </Link>
-                  )
+                  );
                 })}
               </nav>
               <div className="flex-shrink-0 flex border-t border-gray-200 p-4">
@@ -97,7 +97,7 @@ export function Layout({ children }: LayoutProps) {
       >
         <div className="flex flex-col h-full">
           <div className="flex items-center justify-between px-4 py-5 border-b border-gray-200">
-            <h1 className="text-xl font-bold text-gray-900">SolBills</h1>
+            <h1 className="text-xl font-bold text-gray-900">OnHands</h1>
             <button
               onClick={() => setMobileMenuOpen(false)}
               className="text-gray-500 hover:text-gray-700"
@@ -121,7 +121,7 @@ export function Layout({ children }: LayoutProps) {
           <div className="flex-1 overflow-y-auto">
             <nav className="px-2 py-4 space-y-1">
               {navigation.map((item) => {
-                const isActive = location.pathname === item.href
+                const isActive = location.pathname === item.href;
                 return (
                   <Link
                     key={item.name}
@@ -136,15 +136,15 @@ export function Layout({ children }: LayoutProps) {
                     <span className="mr-3 text-lg">{item.icon}</span>
                     {item.name}
                   </Link>
-                )
+                );
               })}
             </nav>
           </div>
           <div className="flex-shrink-0 border-t border-gray-200 p-4">
             <button
               onClick={() => {
-                handleSignOut()
-                handleLinkClick()
+                handleSignOut();
+                handleLinkClick();
               }}
               className="w-full text-left px-3 py-2 text-sm font-medium text-gray-700 hover:text-gray-900"
             >
@@ -178,7 +178,7 @@ export function Layout({ children }: LayoutProps) {
                 />
               </svg>
             </button>
-            <h1 className="text-xl font-bold text-gray-900">SolBills</h1>
+            <h1 className="text-xl font-bold text-gray-900">OnHands</h1>
             <button
               onClick={handleSignOut}
               className="text-gray-700 hover:text-gray-900 text-sm font-medium"
@@ -208,6 +208,5 @@ export function Layout({ children }: LayoutProps) {
         </main>
       </div>
     </div>
-  )
+  );
 }
-

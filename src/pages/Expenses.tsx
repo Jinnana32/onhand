@@ -35,6 +35,10 @@ export function Expenses() {
     amount: '',
     category: '',
     expense_date: new Date().toISOString().split('T')[0],
+    frequency: 'one_time' as Expense['frequency'],
+    due_date: '',
+    start_date: new Date().toISOString().split('T')[0],
+    is_active: true,
   })
 
   const handleOpenModal = (expense?: Expense) => {
@@ -45,6 +49,10 @@ export function Expenses() {
         amount: expense.amount.toString(),
         category: expense.category || '',
         expense_date: expense.expense_date,
+        frequency: expense.frequency || 'one_time',
+        due_date: expense.due_date?.toString() || '',
+        start_date: expense.start_date || new Date().toISOString().split('T')[0],
+        is_active: expense.is_active !== undefined ? expense.is_active : true,
       })
     } else {
       setEditingExpense(null)
@@ -53,6 +61,10 @@ export function Expenses() {
         amount: '',
         category: '',
         expense_date: new Date().toISOString().split('T')[0],
+        frequency: 'one_time',
+        due_date: '',
+        start_date: new Date().toISOString().split('T')[0],
+        is_active: true,
       })
     }
     setIsModalOpen(true)
@@ -66,6 +78,10 @@ export function Expenses() {
       amount: '',
       category: '',
       expense_date: new Date().toISOString().split('T')[0],
+      frequency: 'one_time',
+      due_date: '',
+      start_date: new Date().toISOString().split('T')[0],
+      is_active: true,
     })
   }
 
@@ -78,11 +94,21 @@ export function Expenses() {
       return
     }
 
+    const dueDate = formData.due_date ? parseInt(formData.due_date) : null
+    if (formData.frequency !== 'one_time' && (!dueDate || dueDate < 1 || dueDate > 31)) {
+      alert('Please enter a valid due date (1-31) for recurring expenses')
+      return
+    }
+
     const input = {
       description: formData.description,
       amount,
       category: formData.category || null,
-      expense_date: formData.expense_date,
+      expense_date: formData.frequency === 'one_time' ? formData.expense_date : formData.start_date,
+      frequency: formData.frequency,
+      due_date: formData.frequency !== 'one_time' ? dueDate : null,
+      start_date: formData.frequency !== 'one_time' ? formData.start_date : null,
+      is_active: formData.is_active,
     }
 
     if (editingExpense) {
@@ -172,6 +198,9 @@ export function Expenses() {
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Category
                 </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Type
+                </th>
                 <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Amount
                 </th>
@@ -184,7 +213,16 @@ export function Expenses() {
               {expenses.map((expense) => (
                 <tr key={expense.id}>
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm text-gray-900">{formatDate(expense.expense_date)}</div>
+                    {expense.frequency === 'one_time' ? (
+                      <div className="text-sm text-gray-900">{formatDate(expense.expense_date)}</div>
+                    ) : (
+                      <div className="text-sm text-gray-900">
+                        <div>Due: Day {expense.due_date}</div>
+                        {expense.start_date && (
+                          <div className="text-xs text-gray-500">Started: {formatDate(expense.start_date)}</div>
+                        )}
+                      </div>
+                    )}
                   </td>
                   <td className="px-6 py-4">
                     <div className="text-sm font-medium text-gray-900">{expense.description}</div>
@@ -196,6 +234,22 @@ export function Expenses() {
                       </span>
                     ) : (
                       <span className="text-sm text-gray-400">—</span>
+                    )}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    {expense.frequency === 'one_time' ? (
+                      <span className="px-2 py-1 text-xs font-medium bg-gray-100 text-gray-800 rounded">
+                        One Time
+                      </span>
+                    ) : (
+                      <span className="px-2 py-1 text-xs font-medium bg-green-100 text-green-800 rounded">
+                        {expense.frequency === 'monthly' ? 'Monthly' : 'Weekly'} Recurring
+                      </span>
+                    )}
+                    {expense.frequency !== 'one_time' && !expense.is_active && (
+                      <span className="ml-2 px-2 py-1 text-xs font-medium bg-gray-100 text-gray-600 rounded">
+                        Inactive
+                      </span>
                     )}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-right">
@@ -283,18 +337,96 @@ export function Expenses() {
           </div>
 
           <div>
-            <label htmlFor="expense_date" className="block text-sm font-medium text-gray-700">
-              Date
+            <label htmlFor="frequency" className="block text-sm font-medium text-gray-700">
+              Frequency
             </label>
-            <input
-              type="date"
-              id="expense_date"
-              required
-              value={formData.expense_date}
-              onChange={(e) => setFormData({ ...formData, expense_date: e.target.value })}
+            <select
+              id="frequency"
+              value={formData.frequency}
+              onChange={(e) => setFormData({ ...formData, frequency: e.target.value as Expense['frequency'] })}
               className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
-            />
+            >
+              <option value="one_time">One Time</option>
+              <option value="monthly">Monthly (Recurring)</option>
+              <option value="weekly">Weekly (Recurring)</option>
+            </select>
+            <p className="mt-1 text-xs text-gray-500">
+              Select "Monthly" or "Weekly" for recurring bills like utilities
+            </p>
           </div>
+
+          {formData.frequency === 'one_time' && (
+            <div>
+              <label htmlFor="expense_date" className="block text-sm font-medium text-gray-700">
+                Date
+              </label>
+              <input
+                type="date"
+                id="expense_date"
+                required
+                value={formData.expense_date}
+                onChange={(e) => setFormData({ ...formData, expense_date: e.target.value })}
+                className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+              />
+              <p className="mt-1 text-xs text-gray-500">
+                When did this expense occur?
+              </p>
+            </div>
+          )}
+
+          {formData.frequency !== 'one_time' && (
+            <>
+              <div>
+                <label htmlFor="start_date" className="block text-sm font-medium text-gray-700">
+                  Start Date
+                </label>
+                <input
+                  type="date"
+                  id="start_date"
+                  required
+                  value={formData.start_date}
+                  onChange={(e) => setFormData({ ...formData, start_date: e.target.value })}
+                  className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+                />
+                <p className="mt-1 text-xs text-gray-500">
+                  When does this recurring expense start?
+                </p>
+              </div>
+
+              <div>
+                <label htmlFor="due_date" className="block text-sm font-medium text-gray-700">
+                  Due Date (Day of Month, 1-31)
+                </label>
+                <input
+                  type="number"
+                  id="due_date"
+                  required
+                  min="1"
+                  max="31"
+                  value={formData.due_date}
+                  onChange={(e) => setFormData({ ...formData, due_date: e.target.value })}
+                  className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+                  placeholder="15"
+                />
+                <p className="mt-1 text-xs text-gray-500">
+                  What day of the month is this bill due?
+                </p>
+              </div>
+
+              <div className="flex items-center">
+                <input
+                  type="checkbox"
+                  id="is_active"
+                  checked={formData.is_active}
+                  onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })}
+                  className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+                />
+                <label htmlFor="is_active" className="ml-2 block text-sm text-gray-700">
+                  Active
+                </label>
+              </div>
+            </>
+          )}
 
           <div className="flex justify-end gap-3 pt-4">
             <button

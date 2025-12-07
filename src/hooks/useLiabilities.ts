@@ -12,7 +12,7 @@ interface CreateLiabilityInput {
   source?: string | null
   credit_card_id?: string | null
   credit_limit?: number | null
-  current_balance?: number
+  current_balance?: number | null
   months_to_pay?: number | null
   start_date?: string | null
 }
@@ -58,7 +58,8 @@ export function useLiabilities() {
         .from('liabilities')
         .insert({
           user_id: userId,
-          current_balance: input.current_balance ?? 0,
+          // Only set current_balance if provided (for credit cards, loans, installments)
+          current_balance: input.current_balance ?? null,
           start_date: input.start_date || new Date().toISOString().split('T')[0],
           ...input,
         })

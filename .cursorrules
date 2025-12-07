@@ -1,3 +1,12 @@
+## 🚨 CRITICAL: useEffect Policy
+
+This project AVOIDS useEffect unless absolutely necessary. Before using useEffect, you MUST:
+1. Explain why it's needed
+2. Prove it can't be done with TanStack Query, event handlers, or render calculations
+3. Show proper cleanup if dealing with external systems
+
+Default assumption: You don't need useEffect. Prove otherwise.
+
 # Personal Finance Tracker - Cursor Rules
 
 ## Project Context
@@ -125,3 +134,139 @@ src/
 - Don't make unnecessary API calls
 - Don't skip error boundaries
 - Don't hardcode values that should be configurable
+
+## React Patterns - AVOID useEffect
+
+### ⛔ NEVER use useEffect for:
+1. **Data fetching** - Use TanStack Query instead
+2. **Derived state** - Calculate during render or use useMemo
+3. **Event handlers** - Put logic directly in handlers
+4. **Syncing state** - Lift state up or use proper state management
+
+### ✅ CORRECT Patterns:
+
+**❌ BAD - useEffect for data fetching:**
+```typescript
+const [data, setData] = useState(null);
+
+useEffect(() => {
+  fetchData().then(setData);
+}, []);
+```
+
+**✅ GOOD - TanStack Query:**
+```typescript
+const { data } = useQuery({
+  queryKey: ['data'],
+  queryFn: fetchData
+});
+```
+
+---
+
+**❌ BAD - useEffect for derived state:**
+```typescript
+const [total, setTotal] = useState(0);
+
+useEffect(() => {
+  setTotal(expenses.reduce((sum, e) => sum + e.amount, 0));
+}, [expenses]);
+```
+
+**✅ GOOD - Calculate during render:**
+```typescript
+const total = expenses.reduce((sum, e) => sum + e.amount, 0);
+// Or if expensive:
+const total = useMemo(
+  () => expenses.reduce((sum, e) => sum + e.amount, 0),
+  [expenses]
+);
+```
+
+---
+
+**❌ BAD - useEffect for syncing props to state:**
+```typescript
+useEffect(() => {
+  setLocalValue(propValue);
+}, [propValue]);
+```
+
+**✅ GOOD - Use props directly or controlled component:**
+```typescript
+// Just use propValue directly, or:
+const [value, setValue] = useState(propValue);
+// Only initialize once, update via handlers
+```
+
+---
+
+**❌ BAD - useEffect for event handling:**
+```typescript
+useEffect(() => {
+  if (isSubmitted) {
+    saveData();
+  }
+}, [isSubmitted]);
+```
+
+**✅ GOOD - Direct event handler:**
+```typescript
+const handleSubmit = async () => {
+  await saveData();
+  setIsSubmitted(true);
+};
+```
+
+---
+
+### ⚠️ RARE Valid useEffect Uses:
+
+Only use useEffect for TRUE side effects:
+
+1. **External system sync** (WebSocket, browser APIs):
+```typescript
+useEffect(() => {
+  const ws = new WebSocket('ws://...');
+  ws.onmessage = handleMessage;
+  return () => ws.close(); // cleanup
+}, []);
+```
+
+2. **DOM manipulation** (rare, usually refs are better):
+```typescript
+useEffect(() => {
+  inputRef.current?.focus();
+}, []);
+```
+
+3. **Third-party library integration** (non-React libs):
+```typescript
+useEffect(() => {
+  const chart = initChart(canvasRef.current);
+  return () => chart.destroy();
+}, [data]);
+```
+
+### 🎯 Decision Tree:
+Need to do something?
+├─ Fetching data? → TanStack Query
+├─ Computing value? → Render calculation or useMemo
+├─ Responding to user action? → Event handler
+├─ Syncing with external system? → useEffect (rare)
+└─ Everything else? → Probably don't need useEffect
+
+### General Rule:
+**If you're about to write useEffect, STOP and ask:**
+1. Can TanStack Query handle this? (data fetching/mutations)
+2. Can I calculate this during render? (derived state)
+3. Can I put this in an event handler? (user interactions)
+4. Is this truly an external side effect? (if no, don't use useEffect)
+
+**95% of the time, useEffect is not the answer.**
+
+### Code Review Checklist:
+- [ ] No useEffect for data fetching (use TanStack Query)
+- [ ] No useEffect for derived state (calculate or useMemo)
+- [ ] No useEffect for syncing state
+- [ ] useEffect only for external systems with cleanup

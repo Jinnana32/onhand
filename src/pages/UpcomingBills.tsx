@@ -1,136 +1,398 @@
-import { useState, useMemo } from 'react'
-import { useLiabilities } from '../hooks'
-import { formatCurrency } from '../lib/utils'
-import { Liability } from '../types/database.types'
+import { useState, useMemo, useEffect, useRef } from 'react';
+import { useLiabilities, useExpenses } from '../hooks';
+import { formatCurrency } from '../lib/utils';
+
+type ViewMode = 'calendar' | 'list';
+type FilterGroup =
+  | 'recurring_expenses'
+  | 'credit_cards'
+  | 'loans'
+  | 'installments'
+  | 'other';
 
 export function UpcomingBills() {
-  const { liabilities, isLoading } = useLiabilities()
-  const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth())
-  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear())
+  const { liabilities, isLoading: isLoadingLiabilities } = useLiabilities();
+  const { expenses, isLoading: isLoadingExpenses } = useExpenses();
+  const isLoading = isLoadingLiabilities || isLoadingExpenses;
+  const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
+  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+  const [viewMode, setViewMode] = useState<ViewMode>('calendar');
+  const [selectedFilters, setSelectedFilters] = useState<FilterGroup[]>([]);
+  const [isFilterDropdownOpen, setIsFilterDropdownOpen] = useState(false);
+  const filterDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        filterDropdownRef.current &&
+        !filterDropdownRef.current.contains(event.target as Node)
+      ) {
+        setIsFilterDropdownOpen(false);
+      }
+    };
+
+    if (isFilterDropdownOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isFilterDropdownOpen]);
 
   // Get month name
   const monthNames = [
-    'January', 'February', 'March', 'April', 'May', 'June',
-    'July', 'August', 'September', 'October', 'November', 'December'
-  ]
+    'January',
+    'February',
+    'March',
+    'April',
+    'May',
+    'June',
+    'July',
+    'August',
+    'September',
+    'October',
+    'November',
+    'December',
+  ];
 
-  // Filter active liabilities and calculate which ones are due in the selected month
+  // Helper function to get filter group for a bill
+  const getBillFilterGroup = (bill: {
+    type: 'liability' | 'expense';
+    category: string;
+  }): FilterGroup => {
+    if (bill.type === 'expense') {
+      return 'recurring_expenses';
+    }
+    if (bill.category === 'credit_card') {
+      return 'credit_cards';
+    }
+    if (bill.category === 'loan') {
+      return 'loans';
+    }
+    if (bill.category === 'installment') {
+      return 'installments';
+    }
+    if (bill.category === 'recurring_bill') {
+      return 'recurring_expenses'; // Group recurring bills with recurring expenses
+    }
+    return 'other';
+  };
+
+  // Filter active liabilities and recurring expenses, calculate which ones are due in the selected month
   const billsForMonth = useMemo(() => {
-    if (!liabilities) return []
+    const bills: Array<{
+      type: 'liability' | 'expense';
+      name: string;
+      amount: number;
+      category: string;
+      source?: string | null;
+      dueDate: Date;
+    }> = [];
+    const selectedMonthDate = new Date(selectedYear, selectedMonth, 1);
+    const selectedMonthEndDate = new Date(selectedYear, selectedMonth + 1, 0);
 
-    const activeLiabilities = liabilities.filter((l) => l.is_active)
-    const bills: Array<{ liability: Liability; dueDate: Date }> = []
-    const selectedMonthDate = new Date(selectedYear, selectedMonth, 1)
-    const selectedMonthEndDate = new Date(selectedYear, selectedMonth + 1, 0)
+    // Process liabilities
+    if (liabilities) {
+      const activeLiabilities = liabilities.filter((l) => l.is_active);
+      activeLiabilities.forEach((liability) => {
+        // Check if liability is within payment period
+        const startDate = liability.start_date
+          ? new Date(liability.start_date)
+          : new Date(liability.created_at);
+        startDate.setHours(0, 0, 0, 0);
 
-    activeLiabilities.forEach((liability) => {
-      // Check if liability is within payment period
-      const startDate = liability.start_date ? new Date(liability.start_date) : new Date(liability.created_at)
-      startDate.setHours(0, 0, 0, 0)
-      
-      let endDate: Date | null = null
-      if (liability.months_to_pay !== null && liability.months_to_pay > 0) {
-        endDate = new Date(startDate)
-        endDate.setMonth(endDate.getMonth() + liability.months_to_pay)
-        endDate.setHours(23, 59, 59, 999)
-      }
-
-      // Check if selected month is within payment period
-      if (endDate && selectedMonthDate > endDate) {
-        return // Payment period has ended
-      }
-      if (selectedMonthEndDate < startDate) {
-        return // Payment period hasn't started yet
-      }
-
-      const dueDay = liability.due_date
-      
-      // Create date for the selected month and year with the due day
-      const dueDate = new Date(selectedYear, selectedMonth, dueDay)
-      
-      // Only include if the date is valid (handles cases like Feb 30)
-      if (dueDate.getDate() === dueDay && dueDate.getMonth() === selectedMonth) {
-        // Check if this specific due date is within the payment period
-        if (!endDate || dueDate <= endDate) {
-          bills.push({ liability, dueDate })
+        let endDate: Date | null = null;
+        if (liability.months_to_pay !== null && liability.months_to_pay > 0) {
+          endDate = new Date(startDate);
+          endDate.setMonth(endDate.getMonth() + liability.months_to_pay);
+          endDate.setHours(23, 59, 59, 999);
         }
-      }
-    })
+
+        // Check if selected month is within payment period
+        if (endDate && selectedMonthDate > endDate) {
+          return; // Payment period has ended
+        }
+        if (selectedMonthEndDate < startDate) {
+          return; // Payment period hasn't started yet
+        }
+
+        const dueDay = liability.due_date;
+        const dueDate = new Date(selectedYear, selectedMonth, dueDay);
+
+        // Only include if the date is valid (handles cases like Feb 30)
+        if (
+          dueDate.getDate() === dueDay &&
+          dueDate.getMonth() === selectedMonth
+        ) {
+          // Check if this specific due date is within the payment period
+          if (!endDate || dueDate <= endDate) {
+            bills.push({
+              type: 'liability',
+              name: liability.name,
+              amount: liability.amount,
+              category: liability.category,
+              source: liability.source,
+              dueDate,
+            });
+          }
+        }
+      });
+    }
+
+    // Process recurring expenses
+    if (expenses) {
+      const activeRecurringExpenses = expenses.filter(
+        (e) => e.is_active && e.frequency !== 'one_time'
+      );
+      activeRecurringExpenses.forEach((expense) => {
+        if (!expense.due_date || !expense.start_date) return;
+
+        const startDate = new Date(expense.start_date);
+        startDate.setHours(0, 0, 0, 0);
+
+        // Check if selected month is within payment period
+        if (selectedMonthEndDate < startDate) {
+          return; // Payment period hasn't started yet
+        }
+
+        const dueDay = expense.due_date;
+        const dueDate = new Date(selectedYear, selectedMonth, dueDay);
+
+        // Only include if the date is valid
+        if (
+          dueDate.getDate() === dueDay &&
+          dueDate.getMonth() === selectedMonth
+        ) {
+          bills.push({
+            type: 'expense',
+            name: expense.description,
+            amount: expense.amount,
+            category: expense.category || 'Bills',
+            dueDate,
+          });
+        }
+      });
+    }
 
     // Sort by due date
-    return bills.sort((a, b) => a.dueDate.getTime() - b.dueDate.getTime())
-  }, [liabilities, selectedMonth, selectedYear])
+    const sortedBills = bills.sort(
+      (a, b) => a.dueDate.getTime() - b.dueDate.getTime()
+    );
+
+    // Apply filters if any are selected
+    if (selectedFilters.length > 0) {
+      return sortedBills.filter((bill) => {
+        const filterGroup = getBillFilterGroup(bill);
+        return selectedFilters.includes(filterGroup);
+      });
+    }
+
+    return sortedBills;
+  }, [liabilities, expenses, selectedMonth, selectedYear, selectedFilters]);
 
   // Calculate totals
   const totalAmount = useMemo(() => {
-    return billsForMonth.reduce((sum, bill) => sum + bill.liability.amount, 0)
-  }, [billsForMonth])
+    return billsForMonth.reduce((sum, bill) => sum + bill.amount, 0);
+  }, [billsForMonth]);
 
   // Group bills by due date
   const billsByDate = useMemo(() => {
-    const grouped: Record<number, Array<{ liability: Liability; dueDate: Date }>> = {}
-    
+    const grouped: Record<number, typeof billsForMonth> = {};
+
     billsForMonth.forEach((bill) => {
-      const day = bill.dueDate.getDate()
+      const day = bill.dueDate.getDate();
       if (!grouped[day]) {
-        grouped[day] = []
+        grouped[day] = [];
       }
-      grouped[day].push(bill)
-    })
-    
-    return grouped
-  }, [billsForMonth])
+      grouped[day].push(bill);
+    });
+
+    return grouped;
+  }, [billsForMonth]);
 
   // Navigation functions
   const goToPreviousMonth = () => {
     if (selectedMonth === 0) {
-      setSelectedMonth(11)
-      setSelectedYear(selectedYear - 1)
+      setSelectedMonth(11);
+      setSelectedYear(selectedYear - 1);
     } else {
-      setSelectedMonth(selectedMonth - 1)
+      setSelectedMonth(selectedMonth - 1);
     }
-  }
+  };
 
   const goToNextMonth = () => {
     if (selectedMonth === 11) {
-      setSelectedMonth(0)
-      setSelectedYear(selectedYear + 1)
+      setSelectedMonth(0);
+      setSelectedYear(selectedYear + 1);
     } else {
-      setSelectedMonth(selectedMonth + 1)
+      setSelectedMonth(selectedMonth + 1);
     }
-  }
+  };
 
   const goToCurrentMonth = () => {
-    const now = new Date()
-    setSelectedMonth(now.getMonth())
-    setSelectedYear(now.getFullYear())
-  }
+    const now = new Date();
+    setSelectedMonth(now.getMonth());
+    setSelectedYear(now.getFullYear());
+  };
 
   const getCategoryColor = (category: string) => {
     switch (category) {
       case 'credit_card':
-        return 'bg-blue-100 text-blue-800'
+        return 'bg-blue-100 text-blue-800';
       case 'loan':
-        return 'bg-purple-100 text-purple-800'
+        return 'bg-purple-100 text-purple-800';
       case 'installment':
-        return 'bg-orange-100 text-orange-800'
+        return 'bg-orange-100 text-orange-800';
       default:
-        return 'bg-gray-100 text-gray-800'
+        return 'bg-gray-100 text-gray-800';
     }
-  }
+  };
 
   const getCategoryLabel = (category: string) => {
     switch (category) {
       case 'credit_card':
-        return 'Credit Card'
+        return 'Credit Card';
       case 'loan':
-        return 'Loan'
+        return 'Loan';
       case 'installment':
-        return 'Installment'
+        return 'Installment';
       default:
-        return 'Other'
+        return 'Other';
     }
-  }
+  };
+
+  // Calculate bills for all months (for list view)
+  const billsByMonth = useMemo(() => {
+    if (viewMode !== 'list') return {};
+
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const currentMonth = now.getMonth();
+
+    // Get bills for next 12 months
+    const monthsData: Record<
+      string,
+      Array<{
+        type: 'liability' | 'expense';
+        name: string;
+        amount: number;
+        category: string;
+        source?: string | null;
+        dueDate: Date;
+      }>
+    > = {};
+
+    for (let monthOffset = 0; monthOffset < 12; monthOffset++) {
+      const targetMonth = (currentMonth + monthOffset) % 12;
+      const targetYear =
+        currentYear + Math.floor((currentMonth + monthOffset) / 12);
+      const monthKey = `${targetYear}-${targetMonth}`;
+      monthsData[monthKey] = [];
+
+      const monthStart = new Date(targetYear, targetMonth, 1);
+      const monthEnd = new Date(targetYear, targetMonth + 1, 0);
+
+      // Process liabilities
+      if (liabilities) {
+        const activeLiabilities = liabilities.filter((l) => l.is_active);
+        activeLiabilities.forEach((liability) => {
+          // Check if liability is within payment period
+          const startDate = liability.start_date
+            ? new Date(liability.start_date)
+            : new Date(liability.created_at);
+          startDate.setHours(0, 0, 0, 0);
+
+          let endDate: Date | null = null;
+          if (liability.months_to_pay !== null && liability.months_to_pay > 0) {
+            endDate = new Date(startDate);
+            endDate.setMonth(endDate.getMonth() + liability.months_to_pay);
+            endDate.setHours(23, 59, 59, 999);
+          }
+
+          // Check if month is within payment period
+          if (endDate && monthStart > endDate) {
+            return; // Payment period has ended
+          }
+          if (monthEnd < startDate) {
+            return; // Payment period hasn't started yet
+          }
+
+          const dueDay = liability.due_date;
+          const dueDate = new Date(targetYear, targetMonth, dueDay);
+
+          // Only include if the date is valid
+          if (
+            dueDate.getDate() === dueDay &&
+            dueDate.getMonth() === targetMonth
+          ) {
+            // Check if this specific due date is within the payment period
+            if (!endDate || dueDate <= endDate) {
+              monthsData[monthKey].push({
+                type: 'liability',
+                name: liability.name,
+                amount: liability.amount,
+                category: liability.category,
+                source: liability.source,
+                dueDate,
+              });
+            }
+          }
+        });
+      }
+
+      // Process recurring expenses
+      if (expenses) {
+        const activeRecurringExpenses = expenses.filter(
+          (e) => e.is_active && e.frequency !== 'one_time'
+        );
+        activeRecurringExpenses.forEach((expense) => {
+          if (!expense.due_date || !expense.start_date) return;
+
+          const startDate = new Date(expense.start_date);
+          startDate.setHours(0, 0, 0, 0);
+
+          // Check if month is within payment period
+          if (monthEnd < startDate) {
+            return; // Payment period hasn't started yet
+          }
+
+          const dueDay = expense.due_date;
+          const dueDate = new Date(targetYear, targetMonth, dueDay);
+
+          // Only include if the date is valid
+          if (
+            dueDate.getDate() === dueDay &&
+            dueDate.getMonth() === targetMonth
+          ) {
+            monthsData[monthKey].push({
+              type: 'expense',
+              name: expense.description,
+              amount: expense.amount,
+              category: expense.category || 'Bills',
+              dueDate,
+            });
+          }
+        });
+      }
+
+      // Sort by due date
+      monthsData[monthKey].sort(
+        (a, b) => a.dueDate.getTime() - b.dueDate.getTime()
+      );
+
+      // Apply filters if any are selected
+      if (selectedFilters.length > 0) {
+        monthsData[monthKey] = monthsData[monthKey].filter((bill) => {
+          const filterGroup = getBillFilterGroup(bill);
+          return selectedFilters.includes(filterGroup);
+        });
+      }
+    }
+
+    return monthsData;
+  }, [liabilities, expenses, viewMode, selectedFilters]);
 
   if (isLoading) {
     return (
@@ -147,143 +409,528 @@ export function UpcomingBills() {
           </div>
         </div>
       </div>
-    )
+    );
   }
+
+  const filterOptions: Array<{ value: FilterGroup; label: string }> = [
+    { value: 'recurring_expenses', label: 'Recurring Expenses' },
+    { value: 'credit_cards', label: 'Credit Cards' },
+    { value: 'loans', label: 'Loans' },
+    { value: 'installments', label: 'Installments' },
+    { value: 'other', label: 'Other' },
+  ];
+
+  const handleFilterToggle = (filter: FilterGroup) => {
+    setSelectedFilters((prev) =>
+      prev.includes(filter)
+        ? prev.filter((f) => f !== filter)
+        : [...prev, filter]
+    );
+  };
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-bold text-gray-900">Upcoming Bills</h2>
-      </div>
-
-      {/* Month Selector */}
-      <div className="bg-white p-4 rounded-lg shadow">
-        <div className="flex items-center justify-between">
-          <button
-            onClick={goToPreviousMonth}
-            className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-md"
-          >
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-            </svg>
-          </button>
-          
-          <div className="flex items-center gap-4">
-            <h3 className="text-lg font-semibold text-gray-900">
-              {monthNames[selectedMonth]} {selectedYear}
-            </h3>
+        <div className="flex items-center gap-4">
+          {/* Filter Dropdown */}
+          <div className="relative" ref={filterDropdownRef}>
             <button
-              onClick={goToCurrentMonth}
-              className="px-3 py-1 text-sm text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50 rounded-md"
+              className="px-4 py-2 bg-white border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 flex items-center gap-2"
+              onClick={() => setIsFilterDropdownOpen(!isFilterDropdownOpen)}
             >
-              Today
+              <svg
+                className="w-4 h-4"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"
+                />
+              </svg>
+              Filter
+              {selectedFilters.length > 0 && (
+                <span className="ml-1 px-2 py-0.5 text-xs font-semibold bg-indigo-100 text-indigo-800 rounded-full">
+                  {selectedFilters.length}
+                </span>
+              )}
+            </button>
+            {isFilterDropdownOpen && (
+              <div
+                className="absolute right-0 mt-2 w-56 bg-white rounded-md shadow-lg z-10 border border-gray-200"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="py-1">
+                  {filterOptions.map((option) => (
+                    <label
+                      key={option.value}
+                      className="flex items-center px-4 py-2 hover:bg-gray-50 cursor-pointer"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedFilters.includes(option.value)}
+                        onChange={() => handleFilterToggle(option.value)}
+                        className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+                      />
+                      <span className="ml-3 text-sm text-gray-700">
+                        {option.label}
+                      </span>
+                    </label>
+                  ))}
+                  {selectedFilters.length > 0 && (
+                    <div className="border-t border-gray-200 px-4 py-2">
+                      <button
+                        onClick={() => setSelectedFilters([])}
+                        className="text-sm text-indigo-600 hover:text-indigo-700 font-medium"
+                      >
+                        Clear all filters
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+          <div className="flex items-center gap-2 bg-gray-100 p-1 rounded-lg">
+            <button
+              onClick={() => setViewMode('calendar')}
+              className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+                viewMode === 'calendar'
+                  ? 'bg-white text-indigo-600 shadow-sm'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              <span className="flex items-center gap-2">
+                <svg
+                  className="w-4 h-4"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
+                  />
+                </svg>
+                Calendar
+              </span>
+            </button>
+            <button
+              onClick={() => setViewMode('list')}
+              className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+                viewMode === 'list'
+                  ? 'bg-white text-indigo-600 shadow-sm'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              <span className="flex items-center gap-2">
+                <svg
+                  className="w-4 h-4"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M4 6h16M4 10h16M4 14h16M4 18h16"
+                  />
+                </svg>
+                List
+              </span>
             </button>
           </div>
-
-          <button
-            onClick={goToNextMonth}
-            className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-md"
-          >
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-            </svg>
-          </button>
         </div>
       </div>
 
-      {/* Summary Card */}
-      <div className="bg-white p-6 rounded-lg shadow">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-sm font-medium text-gray-600">Total Bills for {monthNames[selectedMonth]}</p>
-            <p className="text-3xl font-bold text-gray-900 mt-1">
-              {formatCurrency(totalAmount)}
-            </p>
-            <p className="text-sm text-gray-500 mt-1">
-              {billsForMonth.length} {billsForMonth.length === 1 ? 'bill' : 'bills'}
-            </p>
+      {/* Active Filters Display */}
+      {selectedFilters.length > 0 && (
+        <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-3">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-sm font-medium text-indigo-900">
+              Active filters:
+            </span>
+            {selectedFilters.map((filter) => {
+              const option = filterOptions.find((o) => o.value === filter);
+              return (
+                <span
+                  key={filter}
+                  className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800"
+                >
+                  {option?.label}
+                  <button
+                    onClick={() => handleFilterToggle(filter)}
+                    className="ml-2 text-indigo-600 hover:text-indigo-800"
+                  >
+                    ×
+                  </button>
+                </span>
+              );
+            })}
+            <button
+              onClick={() => setSelectedFilters([])}
+              className="text-sm text-indigo-600 hover:text-indigo-700 font-medium ml-auto"
+            >
+              Clear all
+            </button>
           </div>
         </div>
-      </div>
+      )}
 
-      {/* Bills List */}
-      {billsForMonth.length === 0 ? (
-        <div className="bg-white p-12 rounded-lg shadow text-center">
-          <p className="text-gray-500 text-lg">No bills due in {monthNames[selectedMonth]} {selectedYear}</p>
-        </div>
+      {viewMode === 'calendar' ? (
+        <>
+          {/* Month Selector */}
+          <div className="bg-white p-4 rounded-lg shadow">
+            <div className="flex items-center justify-between">
+              <button
+                onClick={goToPreviousMonth}
+                className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-md"
+              >
+                <svg
+                  className="w-5 h-5"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M15 19l-7-7 7-7"
+                  />
+                </svg>
+              </button>
+
+              <div className="flex items-center gap-4">
+                <h3 className="text-lg font-semibold text-gray-900">
+                  {monthNames[selectedMonth]} {selectedYear}
+                </h3>
+                <button
+                  onClick={goToCurrentMonth}
+                  className="px-3 py-1 text-sm text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50 rounded-md"
+                >
+                  Today
+                </button>
+              </div>
+
+              <button
+                onClick={goToNextMonth}
+                className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-md"
+              >
+                <svg
+                  className="w-5 h-5"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M9 5l7 7-7 7"
+                  />
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          {/* Summary Card */}
+          <div className="bg-white p-6 rounded-lg shadow">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-gray-600">
+                  Total Bills for {monthNames[selectedMonth]}
+                </p>
+                <p className="text-3xl font-bold text-gray-900 mt-1">
+                  {formatCurrency(totalAmount)}
+                </p>
+                <p className="text-sm text-gray-500 mt-1">
+                  {billsForMonth.length}{' '}
+                  {billsForMonth.length === 1 ? 'bill' : 'bills'}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Bills List */}
+          {billsForMonth.length === 0 ? (
+            <div className="bg-white p-12 rounded-lg shadow text-center">
+              <p className="text-gray-500 text-lg">
+                No bills due in {monthNames[selectedMonth]} {selectedYear}
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {Object.keys(billsByDate)
+                .sort((a, b) => parseInt(a) - parseInt(b))
+                .map((day) => {
+                  const dayBills = billsByDate[parseInt(day)];
+                  const dayTotal = dayBills.reduce(
+                    (sum, bill) => sum + bill.amount,
+                    0
+                  );
+                  const isPast =
+                    new Date(selectedYear, selectedMonth, parseInt(day)) <
+                    new Date(new Date().setHours(0, 0, 0, 0));
+
+                  return (
+                    <div key={day} className="bg-white rounded-lg shadow">
+                      <div
+                        className={`px-6 py-3 border-l-4 ${
+                          isPast
+                            ? 'bg-red-50 border-red-500'
+                            : 'bg-blue-50 border-blue-500'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-sm font-medium text-gray-600">
+                              {new Date(
+                                selectedYear,
+                                selectedMonth,
+                                parseInt(day)
+                              ).toLocaleDateString('en-US', {
+                                weekday: 'long',
+                              })}
+                            </p>
+                            <p className="text-xl font-bold text-gray-900">
+                              {parseInt(day)} {monthNames[selectedMonth]}
+                            </p>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-sm font-medium text-gray-600">
+                              Total
+                            </p>
+                            <p
+                              className={`text-xl font-bold ${
+                                isPast ? 'text-red-600' : 'text-blue-600'
+                              }`}
+                            >
+                              {formatCurrency(dayTotal)}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="px-6 py-4 space-y-3">
+                        {dayBills.map((bill, index) => (
+                          <div
+                            key={`${bill.type}-${bill.name}-${index}`}
+                            className="flex items-center justify-between py-3 border-b border-gray-100 last:border-0"
+                          >
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2 mb-1">
+                                <h4 className="font-medium text-gray-900">
+                                  {bill.name}
+                                </h4>
+                                <span
+                                  className={`px-2 py-1 text-xs font-medium rounded ${
+                                    bill.type === 'expense'
+                                      ? 'bg-green-100 text-green-800'
+                                      : getCategoryColor(bill.category)
+                                  }`}
+                                >
+                                  {bill.type === 'expense'
+                                    ? 'Recurring Expense'
+                                    : getCategoryLabel(bill.category)}
+                                </span>
+                              </div>
+                              {bill.source && (
+                                <p className="text-sm text-gray-500">
+                                  {bill.source}
+                                </p>
+                              )}
+                            </div>
+                            <div className="text-right">
+                              <p className="text-lg font-semibold text-gray-900">
+                                {formatCurrency(bill.amount)}
+                              </p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+            </div>
+          )}
+        </>
       ) : (
-        <div className="space-y-4">
-          {Object.keys(billsByDate)
-            .sort((a, b) => parseInt(a) - parseInt(b))
-            .map((day) => {
-              const dayBills = billsByDate[parseInt(day)]
-              const dayTotal = dayBills.reduce((sum, bill) => sum + bill.liability.amount, 0)
-              const isPast = new Date(selectedYear, selectedMonth, parseInt(day)) < new Date(new Date().setHours(0, 0, 0, 0))
+        /* List View */
+        <div className="space-y-6">
+          {Object.keys(billsByMonth)
+            .filter((monthKey) => billsByMonth[monthKey].length > 0)
+            .map((monthKey) => {
+              const [year, month] = monthKey.split('-').map(Number);
+              const monthBills = billsByMonth[monthKey];
+              const monthTotal = monthBills.reduce(
+                (sum, bill) => sum + bill.amount,
+                0
+              );
+              const isCurrentMonth =
+                year === new Date().getFullYear() &&
+                month === new Date().getMonth();
+              const isPastMonth =
+                new Date(year, month, 1) <
+                new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+
+              // Group bills by date for this month
+              const billsByDateForMonth: Record<number, typeof monthBills> = {};
+              monthBills.forEach((bill) => {
+                const day = bill.dueDate.getDate();
+                if (!billsByDateForMonth[day]) {
+                  billsByDateForMonth[day] = [];
+                }
+                billsByDateForMonth[day].push(bill);
+              });
 
               return (
-                <div key={day} className="bg-white rounded-lg shadow">
-                  <div className={`px-6 py-3 border-l-4 ${
-                    isPast ? 'bg-red-50 border-red-500' : 'bg-blue-50 border-blue-500'
-                  }`}>
+                <div key={monthKey} className="bg-white rounded-lg shadow">
+                  <div
+                    className={`px-6 py-4 border-l-4 ${
+                      isPastMonth
+                        ? 'bg-gray-50 border-gray-400'
+                        : isCurrentMonth
+                        ? 'bg-indigo-50 border-indigo-500'
+                        : 'bg-blue-50 border-blue-500'
+                    }`}
+                  >
                     <div className="flex items-center justify-between">
                       <div>
-                        <p className="text-sm font-medium text-gray-600">
-                          {new Date(selectedYear, selectedMonth, parseInt(day)).toLocaleDateString('en-US', {
-                            weekday: 'long',
-                          })}
-                        </p>
-                        <p className="text-xl font-bold text-gray-900">
-                          {parseInt(day)} {monthNames[selectedMonth]}
-                        </p>
+                        <h3 className="text-xl font-bold text-gray-900">
+                          {monthNames[month]} {year}
+                        </h3>
+                        {isCurrentMonth && (
+                          <p className="text-sm text-indigo-600 mt-1">
+                            Current Month
+                          </p>
+                        )}
                       </div>
                       <div className="text-right">
-                        <p className="text-sm font-medium text-gray-600">Total</p>
-                        <p className={`text-xl font-bold ${isPast ? 'text-red-600' : 'text-blue-600'}`}>
-                          {formatCurrency(dayTotal)}
+                        <p className="text-sm font-medium text-gray-600">
+                          Total
+                        </p>
+                        <p
+                          className={`text-2xl font-bold ${
+                            isPastMonth
+                              ? 'text-gray-600'
+                              : isCurrentMonth
+                              ? 'text-indigo-600'
+                              : 'text-blue-600'
+                          }`}
+                        >
+                          {formatCurrency(monthTotal)}
+                        </p>
+                        <p className="text-sm text-gray-500 mt-1">
+                          {monthBills.length}{' '}
+                          {monthBills.length === 1 ? 'bill' : 'bills'}
                         </p>
                       </div>
                     </div>
                   </div>
-                  
-                  <div className="px-6 py-4 space-y-3">
-                    {dayBills.map((bill) => (
-                      <div
-                        key={bill.liability.id}
-                        className="flex items-center justify-between py-3 border-b border-gray-100 last:border-0"
-                      >
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2 mb-1">
-                            <h4 className="font-medium text-gray-900">{bill.liability.name}</h4>
-                            <span className={`px-2 py-1 text-xs font-medium rounded ${getCategoryColor(bill.liability.category)}`}>
-                              {getCategoryLabel(bill.liability.category)}
-                            </span>
+
+                  <div className="px-6 py-4 space-y-4">
+                    {Object.keys(billsByDateForMonth)
+                      .sort((a, b) => parseInt(a) - parseInt(b))
+                      .map((day) => {
+                        const dayBills = billsByDateForMonth[parseInt(day)];
+                        const dayTotal = dayBills.reduce(
+                          (sum, bill) => sum + bill.amount,
+                          0
+                        );
+                        const dayDate = new Date(year, month, parseInt(day));
+                        const isPast =
+                          dayDate < new Date(new Date().setHours(0, 0, 0, 0));
+
+                        return (
+                          <div
+                            key={day}
+                            className="border-l-2 border-gray-200 pl-4"
+                          >
+                            <div className="flex items-center justify-between mb-2">
+                              <div>
+                                <p className="text-sm font-medium text-gray-600">
+                                  {dayDate.toLocaleDateString('en-US', {
+                                    weekday: 'short',
+                                  })}
+                                </p>
+                                <p
+                                  className={`text-lg font-semibold ${
+                                    isPast ? 'text-gray-500' : 'text-gray-900'
+                                  }`}
+                                >
+                                  {parseInt(day)} {monthNames[month]}
+                                </p>
+                              </div>
+                              <p
+                                className={`text-lg font-semibold ${
+                                  isPast ? 'text-gray-500' : 'text-gray-900'
+                                }`}
+                              >
+                                {formatCurrency(dayTotal)}
+                              </p>
+                            </div>
+                            <div className="space-y-2">
+                              {dayBills.map((bill, index) => (
+                                <div
+                                  key={`${bill.type}-${bill.name}-${index}`}
+                                  className="flex items-center justify-between py-2 pl-2 border-l-2 border-gray-100"
+                                >
+                                  <div className="flex-1">
+                                    <div className="flex items-center gap-2">
+                                      <h4 className="text-sm font-medium text-gray-900">
+                                        {bill.name}
+                                      </h4>
+                                      <span
+                                        className={`px-2 py-0.5 text-xs font-medium rounded ${
+                                          bill.type === 'expense'
+                                            ? 'bg-green-100 text-green-800'
+                                            : getCategoryColor(bill.category)
+                                        }`}
+                                      >
+                                        {bill.type === 'expense'
+                                          ? 'Recurring Expense'
+                                          : getCategoryLabel(bill.category)}
+                                      </span>
+                                    </div>
+                                    {bill.source && (
+                                      <p className="text-xs text-gray-500 mt-0.5">
+                                        {bill.source}
+                                      </p>
+                                    )}
+                                  </div>
+                                  <p className="text-sm font-semibold text-gray-900">
+                                    {formatCurrency(bill.amount)}
+                                  </p>
+                                </div>
+                              ))}
+                            </div>
                           </div>
-                          {bill.liability.source && (
-                            <p className="text-sm text-gray-500">{bill.liability.source}</p>
-                          )}
-                          {bill.liability.credit_card_id && (
-                            <p className="text-sm text-gray-500">Credit Card Payment</p>
-                          )}
-                        </div>
-                        <div className="text-right">
-                          <p className="text-lg font-semibold text-gray-900">
-                            {formatCurrency(bill.liability.amount)}
-                          </p>
-                          {bill.liability.current_balance > 0 && (
-                            <p className="text-xs text-gray-500">
-                              Balance: {formatCurrency(bill.liability.current_balance)}
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                    ))}
+                        );
+                      })}
                   </div>
                 </div>
-              )
+              );
             })}
+
+          {Object.keys(billsByMonth).filter(
+            (monthKey) => billsByMonth[monthKey].length > 0
+          ).length === 0 && (
+            <div className="bg-white p-12 rounded-lg shadow text-center">
+              <p className="text-gray-500 text-lg">
+                No upcoming bills in the next 12 months
+              </p>
+            </div>
+          )}
         </div>
       )}
     </div>
-  )
+  );
 }
-

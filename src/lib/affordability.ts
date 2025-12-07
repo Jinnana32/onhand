@@ -129,16 +129,65 @@ export function calculateAffordability(
     }
   })
 
-  // Calculate recent expenses in last 30 days
+  // Calculate recent expenses in last 30 days (one-time expenses)
   const thirtyDaysAgo = new Date(today)
   thirtyDaysAgo.setDate(today.getDate() - 30)
 
-  const recentExpenses30Days = expenses
+  const oneTimeExpenses30Days = expenses
     .filter((expense) => {
+      if (expense.frequency !== 'one_time' || !expense.is_active) return false
       const expenseDate = new Date(expense.expense_date)
       return expenseDate >= thirtyDaysAgo && expenseDate <= today
     })
     .reduce((sum, expense) => sum + expense.amount, 0)
+
+  // Calculate upcoming recurring expenses in next 30 days
+  const activeRecurringExpenses = expenses.filter((e) => e.is_active && e.frequency !== 'one_time')
+  let upcomingRecurringExpenses30Days = 0
+
+  activeRecurringExpenses.forEach((expense) => {
+    if (!expense.due_date || !expense.start_date) return
+
+    const startDate = new Date(expense.start_date)
+    startDate.setHours(0, 0, 0, 0)
+
+    // Check if expense period has started
+    if (today < startDate) return
+
+    const dueDay = expense.due_date
+    const currentDay = today.getDate()
+    const currentMonth = today.getMonth()
+    const currentYear = today.getFullYear()
+
+    // Calculate next due date
+    let nextDueDate: Date
+    if (dueDay >= currentDay) {
+      nextDueDate = new Date(currentYear, currentMonth, dueDay)
+    } else {
+      nextDueDate = new Date(currentYear, currentMonth + 1, dueDay)
+    }
+
+    // Check if due within 30 days
+        if (nextDueDate <= thirtyDaysFromNow) {
+          if (expense.frequency === 'monthly') {
+            upcomingRecurringExpenses30Days += expense.amount
+            // Check if there's another monthly payment within 30 days
+            const nextCycle = new Date(nextDueDate)
+            nextCycle.setMonth(nextCycle.getMonth() + 1)
+            if (nextCycle <= thirtyDaysFromNow) {
+              upcomingRecurringExpenses30Days += expense.amount
+            }
+          } else if (expense.frequency === 'weekly') {
+            // Count weekly payments in next 30 days
+            const daysUntilNext = Math.ceil((nextDueDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
+            const remainingDays = 30 - daysUntilNext
+            const additionalPayments = Math.floor(remainingDays / 7)
+            upcomingRecurringExpenses30Days += expense.amount * (1 + additionalPayments)
+          }
+        }
+  })
+
+  const recentExpenses30Days = oneTimeExpenses30Days + upcomingRecurringExpenses30Days
 
   // Calculate available credit card limits
   const creditCardAvailable = (creditCards || [])

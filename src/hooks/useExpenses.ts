@@ -9,6 +9,10 @@ interface CreateExpenseInput {
   amount: number
   category?: string | null
   expense_date?: string
+  frequency?: 'one_time' | 'monthly' | 'weekly'
+  due_date?: number | null
+  start_date?: string | null
+  is_active?: boolean
 }
 
 interface UpdateExpenseInput extends Partial<CreateExpenseInput> {}
@@ -51,6 +55,9 @@ export function useExpenses() {
         .insert({
           user_id: userId,
           expense_date: input.expense_date || new Date().toISOString().split('T')[0],
+          frequency: input.frequency || 'one_time',
+          is_active: input.is_active !== undefined ? input.is_active : true,
+          start_date: input.start_date || (input.frequency !== 'one_time' ? new Date().toISOString().split('T')[0] : null),
           ...input,
         })
         .select()
