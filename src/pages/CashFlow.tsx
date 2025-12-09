@@ -157,6 +157,7 @@ export function CashFlow() {
       source?: string | null;
       dueDate: Date;
       isPaid: boolean;
+      isReceived?: boolean; // For income: whether it has been received
       liability?: { start_date: string | null; months_to_pay: number | null }; // For payment counter
     }> = [];
     const selectedMonthDate = new Date(selectedYear, selectedMonth, 1);
@@ -324,6 +325,7 @@ export function CashFlow() {
               category: income.category,
               dueDate,
               isPaid: false, // Income doesn't have paid status
+              isReceived: false, // Recurring income is not tracked as received per month
             });
           }
         } else if (income.frequency === 'weekly') {
@@ -368,10 +370,46 @@ export function CashFlow() {
                 category: income.category,
                 dueDate: new Date(currentDate),
                 isPaid: false,
+                isReceived: false, // Recurring income is not tracked as received per month
               });
             }
             currentDate.setDate(currentDate.getDate() + 7);
           }
+        }
+      });
+
+      // Process one-time income sources
+      const activeOneTimeIncome = incomeSources.filter(
+        (income) => income.is_active && income.frequency === 'one_time'
+      );
+      activeOneTimeIncome.forEach((income) => {
+        // Use next_payment_date if not received, payment_date if received
+        const paymentDate =
+          income.is_received && income.payment_date
+            ? new Date(income.payment_date)
+            : income.next_payment_date
+            ? new Date(income.next_payment_date)
+            : null;
+
+        if (!paymentDate) return;
+
+        paymentDate.setHours(0, 0, 0, 0);
+
+        // Check if this income falls in the selected month
+        if (
+          paymentDate.getMonth() === selectedMonth &&
+          paymentDate.getFullYear() === selectedYear
+        ) {
+          bills.push({
+            type: 'income',
+            id: income.id,
+            name: income.name,
+            amount: income.amount,
+            category: income.category,
+            dueDate: paymentDate,
+            isPaid: false, // Income doesn't have paid status
+            isReceived: income.is_received || false,
+          });
         }
       });
     }
@@ -410,9 +448,10 @@ export function CashFlow() {
   ]);
 
   // Calculate separate totals for income and expenses/bills
+  // Total Income = unreceived income
   const totalIncome = useMemo(() => {
     return billsForMonth
-      .filter((bill) => bill.type === 'income')
+      .filter((bill) => bill.type === 'income' && !bill.isReceived)
       .reduce((sum, bill) => sum + bill.amount, 0);
   }, [billsForMonth]);
 
@@ -440,26 +479,12 @@ export function CashFlow() {
       .reduce((sum, bill) => sum + bill.amount, 0);
   }, [billsForMonth]);
 
-  // Calculate income received for the month (only one-time payments that are received)
+  // Calculate income received for the month (all received income from billsForMonth)
   const incomeReceived = useMemo(() => {
-    if (!incomeSources) return 0;
-    const selectedMonthStart = new Date(selectedYear, selectedMonth, 1);
-    const selectedMonthEnd = new Date(selectedYear, selectedMonth + 1, 0);
-
-    return incomeSources
-      .filter((income) => {
-        // Only one-time payments that are received
-        if (income.frequency !== 'one_time' || !income.is_received)
-          return false;
-        if (!income.payment_date) return false;
-
-        const paymentDate = new Date(income.payment_date);
-        return (
-          paymentDate >= selectedMonthStart && paymentDate <= selectedMonthEnd
-        );
-      })
-      .reduce((sum, income) => sum + income.amount, 0);
-  }, [incomeSources, selectedYear, selectedMonth]);
+    return billsForMonth
+      .filter((bill) => bill.type === 'income' && bill.isReceived)
+      .reduce((sum, bill) => sum + bill.amount, 0);
+  }, [billsForMonth]);
 
   // Calculate expenses for the month (one-time expenses)
   const expensesForMonth = useMemo(() => {
@@ -661,6 +686,7 @@ export function CashFlow() {
         source?: string | null;
         dueDate: Date;
         isPaid: boolean;
+        isReceived?: boolean; // For income: whether it has been received
         liability?: { start_date: string | null; months_to_pay: number | null }; // For payment counter
       }>
     > = {};
@@ -835,6 +861,7 @@ export function CashFlow() {
                 category: income.category,
                 dueDate,
                 isPaid: false,
+                isReceived: false, // Recurring income is not tracked as received per month
               });
             }
           } else if (income.frequency === 'weekly') {
@@ -872,10 +899,46 @@ export function CashFlow() {
                   category: income.category,
                   dueDate: new Date(currentDate),
                   isPaid: false,
+                  isReceived: false, // Recurring income is not tracked as received per month
                 });
               }
               currentDate.setDate(currentDate.getDate() + 7);
             }
+          }
+        });
+
+        // Process one-time income sources
+        const activeOneTimeIncome = incomeSources.filter(
+          (income) => income.is_active && income.frequency === 'one_time'
+        );
+        activeOneTimeIncome.forEach((income) => {
+          // Use next_payment_date if not received, payment_date if received
+          const paymentDate =
+            income.is_received && income.payment_date
+              ? new Date(income.payment_date)
+              : income.next_payment_date
+              ? new Date(income.next_payment_date)
+              : null;
+
+          if (!paymentDate) return;
+
+          paymentDate.setHours(0, 0, 0, 0);
+
+          // Check if this income falls in the target month
+          if (
+            paymentDate.getMonth() === targetMonth &&
+            paymentDate.getFullYear() === targetYear
+          ) {
+            monthsData[monthKey].push({
+              type: 'income',
+              id: income.id,
+              name: income.name,
+              amount: income.amount,
+              category: income.category,
+              dueDate: paymentDate,
+              isPaid: false,
+              isReceived: income.is_received || false,
+            });
           }
         });
       }
