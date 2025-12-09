@@ -41,6 +41,7 @@ export function Liabilities() {
     amount: '',
     due_date: '',
     category: 'credit_card' as Liability['category'],
+    payment_type: 'straight' as 'straight' | 'installment' | null,
     source: '',
     credit_card_id: '',
     credit_limit: '',
@@ -57,6 +58,9 @@ export function Liabilities() {
         amount: liability.amount.toString(),
         due_date: liability.due_date.toString(),
         category: liability.category,
+        payment_type:
+          liability.payment_type ||
+          (liability.category === 'loan' ? 'installment' : 'straight'),
         source: liability.source || '',
         credit_card_id: liability.credit_card_id || '',
         credit_limit: liability.credit_limit?.toString() || '',
@@ -72,6 +76,7 @@ export function Liabilities() {
         amount: '',
         due_date: '',
         category: 'credit_card',
+        payment_type: 'straight',
         source: '',
         credit_card_id: '',
         credit_limit: '',
@@ -91,6 +96,7 @@ export function Liabilities() {
       amount: '',
       due_date: '',
       category: 'credit_card',
+      payment_type: 'straight',
       source: '',
       credit_card_id: '',
       credit_limit: '',
@@ -104,11 +110,9 @@ export function Liabilities() {
     e.preventDefault();
     const amount = parseFloat(formData.amount);
     const dueDate = parseInt(formData.due_date);
-    // Only set current_balance for credit cards, loans, and installments
+    // Only set current_balance for credit cards, loans, and credit card installments
     const needsCurrentBalance =
-      formData.category === 'credit_card' ||
-      formData.category === 'loan' ||
-      formData.category === 'installment';
+      formData.category === 'credit_card' || formData.category === 'loan';
     const currentBalance =
       needsCurrentBalance && formData.current_balance
         ? parseFloat(formData.current_balance)
@@ -127,14 +131,66 @@ export function Liabilities() {
       return;
     }
 
-    const monthsToPay = formData.months_to_pay
-      ? parseInt(formData.months_to_pay)
-      : null;
-    if (formData.months_to_pay && (isNaN(monthsToPay!) || monthsToPay! < 1)) {
-      alert(
-        'Please enter a valid number of months (1 or more), or leave empty for recurring forever'
-      );
-      return;
+    // Determine payment_type and months_to_pay based on category
+    let paymentType: 'straight' | 'installment' | null = null;
+    let monthsToPay: number | null = null;
+
+    if (formData.category === 'credit_card') {
+      // Credit card: use selected payment_type
+      paymentType = formData.payment_type || 'straight';
+      // Straight payment = months_to_pay = 1, Installment = user specified
+      if (paymentType === 'straight') {
+        monthsToPay = 1;
+      } else {
+        // Installment: user must specify months_to_pay
+        monthsToPay = formData.months_to_pay
+          ? parseInt(formData.months_to_pay)
+          : null;
+        if (
+          !formData.months_to_pay ||
+          isNaN(parseInt(formData.months_to_pay)) ||
+          parseInt(formData.months_to_pay) < 1
+        ) {
+          alert(
+            'Please enter a valid number of months for installment payment (1 or more)'
+          );
+          return;
+        }
+      }
+    } else if (formData.category === 'loan') {
+      // Loan: always installment
+      paymentType = 'installment';
+      monthsToPay = formData.months_to_pay
+        ? parseInt(formData.months_to_pay)
+        : null;
+      if (
+        !formData.months_to_pay ||
+        isNaN(parseInt(formData.months_to_pay)) ||
+        parseInt(formData.months_to_pay) < 1
+      ) {
+        alert('Please enter a valid number of months for the loan (1 or more)');
+        return;
+      }
+    } else if (formData.category === 'recurring_bill') {
+      // Recurring bill: always straight, no months_to_pay (recurring forever)
+      paymentType = 'straight';
+      monthsToPay = null;
+    } else {
+      // Other: default to straight
+      paymentType = 'straight';
+      monthsToPay = formData.months_to_pay
+        ? parseInt(formData.months_to_pay)
+        : null;
+      if (
+        formData.months_to_pay &&
+        (isNaN(parseInt(formData.months_to_pay)) ||
+          parseInt(formData.months_to_pay) < 1)
+      ) {
+        alert(
+          'Please enter a valid number of months (1 or more), or leave empty for recurring forever'
+        );
+        return;
+      }
     }
 
     const input = {
@@ -142,6 +198,7 @@ export function Liabilities() {
       amount,
       due_date: dueDate,
       category: formData.category,
+      payment_type: paymentType,
       source: formData.source || null,
       credit_card_id: formData.credit_card_id || null,
       credit_limit: creditLimit,
@@ -710,9 +767,22 @@ export function Liabilities() {
               value={formData.category}
               onChange={(e) => {
                 const newCategory = e.target.value as Liability['category'];
+                // Auto-set payment_type based on category
+                let newPaymentType: 'straight' | 'installment' | null =
+                  'straight';
+                if (newCategory === 'loan') {
+                  newPaymentType = 'installment';
+                } else if (newCategory === 'recurring_bill') {
+                  newPaymentType = 'straight';
+                } else if (newCategory === 'credit_card') {
+                  // Keep existing payment_type for credit card, or default to straight
+                  newPaymentType = formData.payment_type || 'straight';
+                }
+
                 setFormData({
                   ...formData,
                   category: newCategory,
+                  payment_type: newPaymentType,
                   // Clear current_balance and months_to_pay for recurring bills
                   current_balance:
                     newCategory === 'recurring_bill' || newCategory === 'other'
@@ -720,8 +790,8 @@ export function Liabilities() {
                       : formData.current_balance,
                   months_to_pay:
                     newCategory === 'recurring_bill' ||
-                    newCategory === 'other' ||
-                    newCategory === 'credit_card'
+                    (newCategory === 'credit_card' &&
+                      newPaymentType === 'straight')
                       ? ''
                       : formData.months_to_pay,
                 });
@@ -730,11 +800,50 @@ export function Liabilities() {
             >
               <option value="credit_card">Credit Card</option>
               <option value="loan">Loan</option>
-              <option value="installment">Installment</option>
               <option value="recurring_bill">Recurring Bill</option>
               <option value="other">Other</option>
             </select>
           </div>
+
+          {/* Payment Type - Only for credit cards */}
+          {formData.category === 'credit_card' && (
+            <div>
+              <label
+                htmlFor="payment_type"
+                className="block text-sm font-medium text-gray-700"
+              >
+                Payment Type
+              </label>
+              <select
+                id="payment_type"
+                required
+                value={formData.payment_type || 'straight'}
+                onChange={(e) => {
+                  const newPaymentType = e.target.value as
+                    | 'straight'
+                    | 'installment';
+                  setFormData({
+                    ...formData,
+                    payment_type: newPaymentType,
+                    // Clear months_to_pay if switching to straight
+                    months_to_pay:
+                      newPaymentType === 'straight'
+                        ? ''
+                        : formData.months_to_pay,
+                  });
+                }}
+                className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+              >
+                <option value="straight">Straight (Monthly Payment)</option>
+                <option value="installment">Installment (Multi-month)</option>
+              </select>
+              <p className="mt-1 text-xs text-gray-500">
+                {formData.payment_type === 'straight'
+                  ? 'Pay the full amount monthly (months_to_pay = 1)'
+                  : 'Convert to installments over multiple months'}
+              </p>
+            </div>
+          )}
 
           <div>
             <label
@@ -754,8 +863,7 @@ export function Liabilities() {
               placeholder={
                 formData.category === 'credit_card'
                   ? 'e.g., BPI, RCBC, BDO'
-                  : formData.category === 'loan' ||
-                    formData.category === 'installment'
+                  : formData.category === 'loan'
                   ? 'e.g., Atome, Home Credit, BillEase'
                   : formData.category === 'recurring_bill'
                   ? 'e.g., Meralco, Maynilad, Manila Water'
@@ -767,8 +875,6 @@ export function Liabilities() {
                 'Enter the bank name (BPI, RCBC, BDO, etc.)'}
               {formData.category === 'loan' &&
                 'Enter the loan provider name (Atome, Home Credit, etc.)'}
-              {formData.category === 'installment' &&
-                'Enter the installment provider name (BillEase, etc.)'}
               {formData.category === 'recurring_bill' &&
                 'Enter the utility company name (Meralco, Maynilad, Manila Water, etc.)'}
               {formData.category === 'other' &&
@@ -845,10 +951,20 @@ export function Liabilities() {
             </>
           )}
 
-          {/* Current Balance - Only for credit cards, loans, installments */}
+          {/* Info for credit cards */}
+          {formData.category === 'credit_card' &&
+            formData.payment_type === 'straight' && (
+              <div className="bg-blue-50 border border-blue-200 rounded-md p-3">
+                <p className="text-sm text-blue-800">
+                  <strong>Note:</strong> Straight payment automatically sets{' '}
+                  <strong>months_to_pay = 1</strong> (monthly payment cycle).
+                </p>
+              </div>
+            )}
+
+          {/* Current Balance - Only for credit cards and loans */}
           {(formData.category === 'credit_card' ||
-            formData.category === 'loan' ||
-            formData.category === 'installment') && (
+            formData.category === 'loan') && (
             <div>
               <label
                 htmlFor="current_balance"
@@ -872,8 +988,9 @@ export function Liabilities() {
                 {formData.category === 'credit_card' &&
                   'Outstanding balance on this credit card'}
                 {formData.category === 'loan' && 'Remaining principal amount'}
-                {formData.category === 'installment' &&
-                  'Remaining amount to pay'}
+                {formData.category === 'credit_card' &&
+                  formData.payment_type === 'installment' &&
+                  'Remaining amount to pay for this installment'}
               </p>
             </div>
           )}
@@ -900,9 +1017,10 @@ export function Liabilities() {
             </p>
           </div>
 
-          {/* Months to Pay - Only for loans and installments */}
+          {/* Months to Pay - Only for loans and credit card installments */}
           {(formData.category === 'loan' ||
-            formData.category === 'installment') && (
+            (formData.category === 'credit_card' &&
+              formData.payment_type === 'installment')) && (
             <div>
               <label
                 htmlFor="months_to_pay"

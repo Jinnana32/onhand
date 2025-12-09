@@ -26,12 +26,13 @@ export interface Liability {
   name: string
   amount: number
   due_date: number // Day of month (1-31)
-  category: 'credit_card' | 'loan' | 'installment' | 'recurring_bill' | 'other'
+  category: 'credit_card' | 'loan' | 'recurring_bill' | 'other'
+  payment_type: 'straight' | 'installment' | null // Payment type: straight (one-time/monthly) or installment (multi-month)
   source: string | null // e.g., "Atome", "Home Credit", "Meralco", "Maynilad" (for non-credit-card liabilities)
   credit_card_id: string | null // Reference to credit_cards table
   credit_limit: number | null // For backward compatibility, can be derived from credit_card
   current_balance: number | null // Only for credit cards, loans, installments (null for recurring bills)
-  months_to_pay: number | null // Number of months to pay (null = recurring forever, only for loans/installments)
+  months_to_pay: number | null // Number of months to pay (null = recurring forever, 1 = straight payment)
   start_date: string | null // Date when payment period starts
   is_active: boolean
   created_at: string

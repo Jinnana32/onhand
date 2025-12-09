@@ -9,6 +9,7 @@ interface CreateLiabilityInput {
   amount: number
   due_date: number
   category: Liability['category']
+  payment_type?: 'straight' | 'installment' | null
   source?: string | null
   credit_card_id?: string | null
   credit_limit?: number | null

@@ -80,18 +80,20 @@ export function UpcomingBills() {
   const getBillFilterGroup = (bill: {
     type: 'liability' | 'expense';
     category: string;
+    payment_type?: 'straight' | 'installment' | null;
   }): FilterGroup => {
     if (bill.type === 'expense') {
       return 'recurring_expenses';
     }
     if (bill.category === 'credit_card') {
+      // Credit card with installment payment_type goes to installments
+      if (bill.payment_type === 'installment') {
+        return 'installments';
+      }
       return 'credit_cards';
     }
     if (bill.category === 'loan') {
       return 'loans';
-    }
-    if (bill.category === 'installment') {
-      return 'installments';
     }
     if (bill.category === 'recurring_bill') {
       return 'recurring_expenses'; // Group recurring bills with recurring expenses
@@ -135,6 +137,7 @@ export function UpcomingBills() {
       name: string;
       amount: number;
       category: string;
+      payment_type?: 'straight' | 'installment' | null;
       source?: string | null;
       dueDate: Date;
       isPaid: boolean;
@@ -155,7 +158,24 @@ export function UpcomingBills() {
         let endDate: Date | null = null;
         if (liability.months_to_pay !== null && liability.months_to_pay > 0) {
           endDate = new Date(startDate);
-          endDate.setMonth(endDate.getMonth() + liability.months_to_pay);
+          // If months_to_pay = 1, end date should be the last day of the start month
+          // For months_to_pay > 1, end date is the last day of the (months_to_pay - 1)th month after start
+          if (liability.months_to_pay === 1) {
+            // Set to last day of the start month
+            endDate = new Date(
+              startDate.getFullYear(),
+              startDate.getMonth() + 1,
+              0
+            );
+          } else {
+            // For months_to_pay > 1, set to last day of the (months_to_pay - 1)th month
+            endDate.setMonth(endDate.getMonth() + liability.months_to_pay - 1);
+            endDate = new Date(
+              endDate.getFullYear(),
+              endDate.getMonth() + 1,
+              0
+            );
+          }
           endDate.setHours(23, 59, 59, 999);
         }
 
@@ -188,6 +208,7 @@ export function UpcomingBills() {
               name: liability.name,
               amount: liability.amount,
               category: liability.category,
+              payment_type: liability.payment_type,
               source: liability.source,
               dueDate,
               isPaid,
@@ -311,27 +332,33 @@ export function UpcomingBills() {
     setSelectedYear(now.getFullYear());
   };
 
-  const getCategoryColor = (category: string) => {
+  const getCategoryColor = (
+    category: string,
+    paymentType?: 'straight' | 'installment' | null
+  ) => {
     switch (category) {
       case 'credit_card':
-        return 'bg-blue-100 text-blue-800';
+        return paymentType === 'installment'
+          ? 'bg-orange-100 text-orange-800'
+          : 'bg-blue-100 text-blue-800';
       case 'loan':
         return 'bg-purple-100 text-purple-800';
-      case 'installment':
-        return 'bg-orange-100 text-orange-800';
       default:
         return 'bg-gray-100 text-gray-800';
     }
   };
 
-  const getCategoryLabel = (category: string) => {
+  const getCategoryLabel = (
+    category: string,
+    paymentType?: 'straight' | 'installment' | null
+  ) => {
     switch (category) {
       case 'credit_card':
-        return 'Credit Card';
+        return paymentType === 'installment'
+          ? 'Credit Card (Installment)'
+          : 'Credit Card';
       case 'loan':
         return 'Loan';
-      case 'installment':
-        return 'Installment';
       default:
         return 'Other';
     }
@@ -354,6 +381,7 @@ export function UpcomingBills() {
         name: string;
         amount: number;
         category: string;
+        payment_type?: 'straight' | 'installment' | null;
         source?: string | null;
         dueDate: Date;
         isPaid: boolean;
@@ -383,7 +411,26 @@ export function UpcomingBills() {
           let endDate: Date | null = null;
           if (liability.months_to_pay !== null && liability.months_to_pay > 0) {
             endDate = new Date(startDate);
-            endDate.setMonth(endDate.getMonth() + liability.months_to_pay);
+            // If months_to_pay = 1, end date should be the last day of the start month
+            // For months_to_pay > 1, end date is the last day of the (months_to_pay - 1)th month after start
+            if (liability.months_to_pay === 1) {
+              // Set to last day of the start month
+              endDate = new Date(
+                startDate.getFullYear(),
+                startDate.getMonth() + 1,
+                0
+              );
+            } else {
+              // For months_to_pay > 1, set to last day of the (months_to_pay - 1)th month
+              endDate.setMonth(
+                endDate.getMonth() + liability.months_to_pay - 1
+              );
+              endDate = new Date(
+                endDate.getFullYear(),
+                endDate.getMonth() + 1,
+                0
+              );
+            }
             endDate.setHours(23, 59, 59, 999);
           }
 
@@ -412,6 +459,7 @@ export function UpcomingBills() {
                 name: liability.name,
                 amount: liability.amount,
                 category: liability.category,
+                payment_type: liability.payment_type,
                 source: liability.source,
                 dueDate,
                 isPaid,
@@ -922,12 +970,18 @@ export function UpcomingBills() {
                                     className={`px-2 py-1 text-xs font-medium rounded ${
                                       bill.type === 'expense'
                                         ? 'bg-green-100 text-green-800'
-                                        : getCategoryColor(bill.category)
+                                        : getCategoryColor(
+                                            bill.category,
+                                            bill.payment_type
+                                          )
                                     }`}
                                   >
                                     {bill.type === 'expense'
                                       ? 'Recurring Expense'
-                                      : getCategoryLabel(bill.category)}
+                                      : getCategoryLabel(
+                                          bill.category,
+                                          bill.payment_type
+                                        )}
                                   </span>
                                 </div>
                                 {bill.source && (
@@ -1107,12 +1161,18 @@ export function UpcomingBills() {
                                           className={`px-2 py-0.5 text-xs font-medium rounded ${
                                             bill.type === 'expense'
                                               ? 'bg-green-100 text-green-800'
-                                              : getCategoryColor(bill.category)
+                                              : getCategoryColor(
+                                                  bill.category,
+                                                  bill.payment_type
+                                                )
                                           }`}
                                         >
                                           {bill.type === 'expense'
                                             ? 'Recurring Expense'
-                                            : getCategoryLabel(bill.category)}
+                                            : getCategoryLabel(
+                                                bill.category,
+                                                bill.payment_type
+                                              )}
                                         </span>
                                       </div>
                                       {bill.source && (
