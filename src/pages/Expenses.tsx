@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { useExpenses } from '../hooks'
+import { useState, useMemo } from 'react'
+import { useExpenses, useLiabilities } from '../hooks'
 import { Expense } from '../types/database.types'
 import { formatCurrency, formatDate } from '../lib/utils'
 import { Modal } from '../components/Modal'
@@ -18,13 +18,26 @@ const expenseCategories = [
 export function Expenses() {
   const {
     expenses,
-    isLoading,
+    isLoading: isLoadingExpenses,
     createExpense,
     updateExpense,
     deleteExpense,
     isCreating,
     isUpdating,
   } = useExpenses()
+  const { liabilities, isLoading: isLoadingLiabilities } = useLiabilities()
+  const isLoading = isLoadingExpenses || isLoadingLiabilities
+
+  // Create a map of liability_id to liability name for quick lookup
+  const liabilityMap = useMemo(() => {
+    const map = new Map<string, string>()
+    if (liabilities) {
+      liabilities.forEach((liability) => {
+        map.set(liability.id, liability.name)
+      })
+    }
+    return map
+  }, [liabilities])
 
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null)
@@ -196,6 +209,9 @@ export function Expenses() {
                   Description
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Linked To
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Category
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -226,6 +242,15 @@ export function Expenses() {
                   </td>
                   <td className="px-6 py-4">
                     <div className="text-sm font-medium text-gray-900">{expense.description}</div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    {expense.liability_id && liabilityMap.has(expense.liability_id) ? (
+                      <span className="px-2 py-1 text-xs font-medium bg-purple-100 text-purple-800 rounded">
+                        {liabilityMap.get(expense.liability_id)}
+                      </span>
+                    ) : (
+                      <span className="text-sm text-gray-400">—</span>
+                    )}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     {expense.category ? (

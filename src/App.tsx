@@ -12,7 +12,7 @@ import { Expenses } from './pages/Expenses'
 import { Assistant } from './pages/Assistant'
 import { AffordabilityCalculator } from './pages/AffordabilityCalculator'
 import { CreditCards } from './pages/CreditCards'
-import { UpcomingBills } from './pages/UpcomingBills'
+import { CashFlow } from './pages/CashFlow'
 
 const queryClient = new QueryClient()
 
@@ -140,11 +140,11 @@ function App() {
             }
           />
           <Route
-            path="/upcoming-bills"
+            path="/cash-flow"
             element={
               session ? (
                 <ProtectedRoute>
-                  <UpcomingBills />
+                  <CashFlow />
                 </ProtectedRoute>
               ) : (
                 <Navigate to="/auth" replace />

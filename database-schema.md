@@ -79,8 +79,9 @@ CREATE TABLE income_sources (
   amount DECIMAL(12, 2) NOT NULL,
   frequency TEXT NOT NULL, -- 'monthly', 'weekly', 'one_time'
   category TEXT NOT NULL DEFAULT 'other', -- 'salary', 'project', 'other'
-  next_payment_date DATE, -- For recurring income
-  payment_date DATE, -- For one-time income
+  next_payment_date DATE, -- For recurring income or expected date for one-time
+  payment_date DATE, -- For one-time income (when received)
+  is_received BOOLEAN DEFAULT false, -- For one-time payments: true if already received
   is_active BOOLEAN DEFAULT true,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()

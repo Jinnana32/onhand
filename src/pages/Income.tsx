@@ -26,6 +26,7 @@ export function Income() {
     category: 'salary' as IncomeSource['category'],
     next_payment_date: '',
     payment_date: '',
+    isReceived: false, // For one-time payments
   })
 
   const handleOpenModal = (income?: IncomeSource) => {
@@ -38,6 +39,7 @@ export function Income() {
         category: income.category,
         next_payment_date: income.next_payment_date || '',
         payment_date: income.payment_date || '',
+        isReceived: income.is_received || false,
       })
     } else {
       setEditingIncome(null)
@@ -48,6 +50,7 @@ export function Income() {
         category: 'salary',
         next_payment_date: '',
         payment_date: '',
+        isReceived: false,
       })
     }
     setIsModalOpen(true)
@@ -63,6 +66,7 @@ export function Income() {
       category: 'salary',
       next_payment_date: '',
       payment_date: '',
+      isReceived: false,
     })
   }
 
@@ -74,13 +78,39 @@ export function Income() {
       return
     }
 
+    // For one-time payments: if received, set payment_date to today and next_payment_date to today
+    // If not received, use next_payment_date as the expected date
+    let next_payment_date: string | null = null
+    let payment_date: string | null = null
+    let is_received: boolean = false
+
+    if (formData.frequency === 'one_time') {
+      is_received = formData.isReceived
+      if (formData.isReceived) {
+        // Received: set both to today
+        const today = new Date().toISOString().split('T')[0]
+        payment_date = today
+        next_payment_date = today
+      } else {
+        // Not received: use next_payment_date as expected date
+        next_payment_date = formData.next_payment_date || null
+        payment_date = null
+      }
+    } else {
+      // For recurring payments, use the existing logic
+      next_payment_date = formData.next_payment_date || null
+      payment_date = null
+      is_received = false
+    }
+
     const input = {
       name: formData.name,
       amount,
       frequency: formData.frequency,
       category: formData.category,
-      next_payment_date: formData.next_payment_date || null,
-      payment_date: formData.payment_date || null,
+      next_payment_date,
+      payment_date,
+      is_received,
     }
 
     if (editingIncome) {
@@ -355,18 +385,45 @@ export function Income() {
           )}
 
           {formData.frequency === 'one_time' && (
-            <div>
-              <label htmlFor="payment_date" className="block text-sm font-medium text-gray-700">
-                Payment Date
-              </label>
-              <input
-                type="date"
-                id="payment_date"
-                value={formData.payment_date}
-                onChange={(e) => setFormData({ ...formData, payment_date: e.target.value })}
-                className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
-              />
-            </div>
+            <>
+              <div className="flex items-center">
+                <input
+                  type="checkbox"
+                  id="isReceived"
+                  checked={formData.isReceived}
+                  onChange={(e) => {
+                    const isReceived = e.target.checked
+                    setFormData({
+                      ...formData,
+                      isReceived,
+                      // If checked, automatically set next_payment_date to today
+                      next_payment_date: isReceived
+                        ? new Date().toISOString().split('T')[0]
+                        : formData.next_payment_date,
+                    })
+                  }}
+                  className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+                />
+                <label htmlFor="isReceived" className="ml-2 block text-sm font-medium text-gray-700">
+                  Received
+                </label>
+              </div>
+
+              {!formData.isReceived && (
+                <div>
+                  <label htmlFor="next_payment_date" className="block text-sm font-medium text-gray-700">
+                    Expected Payment Date
+                  </label>
+                  <input
+                    type="date"
+                    id="next_payment_date"
+                    value={formData.next_payment_date}
+                    onChange={(e) => setFormData({ ...formData, next_payment_date: e.target.value })}
+                    className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+                  />
+                </div>
+              )}
+            </>
           )}
 
           <div className="flex justify-end gap-3 pt-4">

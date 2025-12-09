@@ -1,23 +1,25 @@
-import { useLiabilities } from '../hooks'
-import { formatCurrency, getDaysUntilDue } from '../lib/utils'
+import { useLiabilities } from '../hooks';
+import { formatCurrency, getDaysUntilDue } from '../lib/utils';
 
 export function UpcomingBills() {
-  const { liabilities, isLoading } = useLiabilities()
+  const { liabilities, isLoading } = useLiabilities();
 
   // Get upcoming bills in the next 7 days
   const upcomingBills = liabilities
     .filter((liability) => {
-      if (!liability.is_active) return false
-      const daysUntil = getDaysUntilDue(liability.due_date)
-      return daysUntil >= 0 && daysUntil <= 7
+      if (!liability.is_active) return false;
+      const daysUntil = getDaysUntilDue(liability.due_date);
+      return daysUntil >= 0 && daysUntil <= 7;
     })
     .sort((a, b) => getDaysUntilDue(a.due_date) - getDaysUntilDue(b.due_date))
-    .slice(0, 5)
+    .slice(0, 5);
 
   if (isLoading) {
     return (
       <div className="bg-white p-6 rounded-lg shadow">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">Upcoming Bills (Next 7 Days)</h3>
+        <h3 className="text-lg font-semibold text-gray-900 mb-4">
+          Cash flow (Next 7 Days)
+        </h3>
         <div className="space-y-3">
           {[1, 2, 3].map((i) => (
             <div key={i} className="animate-pulse">
@@ -27,12 +29,14 @@ export function UpcomingBills() {
           ))}
         </div>
       </div>
-    )
+    );
   }
 
   return (
     <div className="bg-white p-6 rounded-lg shadow">
-      <h3 className="text-lg font-semibold text-gray-900 mb-4">Upcoming Bills (Next 7 Days)</h3>
+      <h3 className="text-lg font-semibold text-gray-900 mb-4">
+        Cash flow (Next 7 Days)
+      </h3>
       {upcomingBills.length === 0 ? (
         <div className="text-center py-8 text-gray-500">
           <p>No bills due in the next 7 days.</p>
@@ -40,7 +44,7 @@ export function UpcomingBills() {
       ) : (
         <div className="space-y-3">
           {upcomingBills.map((bill) => {
-            const daysUntil = getDaysUntilDue(bill.due_date)
+            const daysUntil = getDaysUntilDue(bill.due_date);
             return (
               <div
                 key={bill.id}
@@ -73,11 +77,10 @@ export function UpcomingBills() {
                   {formatCurrency(bill.amount)}
                 </p>
               </div>
-            )
+            );
           })}
         </div>
       )}
     </div>
-  )
+  );
 }
-

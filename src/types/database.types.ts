@@ -48,6 +48,7 @@ export interface IncomeSource {
   category: 'salary' | 'project' | 'other'
   next_payment_date: string | null
   payment_date: string | null
+  is_received: boolean
   is_active: boolean
   created_at: string
   updated_at: string

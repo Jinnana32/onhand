@@ -17,7 +17,7 @@ export function CashFlow() {
   const {
     expenses,
     isLoading: isLoadingExpenses,
-    createExpense,
+    createExpenseAsync,
   } = useExpenses();
   const { incomeSources, isLoading: isLoadingIncome } = useIncomeSources();
   const isLoading =
@@ -121,16 +121,26 @@ export function CashFlow() {
 
       if (liabilityExpenses.length === 0) return false;
 
-      // Check if any expense was created during or after the bill's due month
-      // This handles late payments - if you pay in January for a December bill, it still counts
-      const billDueDate = new Date(year, month, 1);
-      billDueDate.setHours(0, 0, 0, 0);
+      // Check if any expense was created in the same month or later
+      // This handles both early payments (paying before due date) and late payments
+      const billMonthStart = new Date(year, month, 1);
+      billMonthStart.setHours(0, 0, 0, 0);
 
       return liabilityExpenses.some((expense) => {
         const expenseDate = new Date(expense.expense_date);
         expenseDate.setHours(0, 0, 0, 0);
-        // Expense must be created during or after the bill's due month
-        return expenseDate >= billDueDate;
+        // Expense must be created in the same month or later (handles early and late payments)
+        // Compare by year and month to handle payments made before or after the due date
+        const expenseYear = expenseDate.getFullYear();
+        const expenseMonth = expenseDate.getMonth();
+        const billYear = year;
+        const billMonth = month;
+
+        // Payment is valid if it's in the same month or later
+        return (
+          expenseYear > billYear ||
+          (expenseYear === billYear && expenseMonth >= billMonth)
+        );
       });
     };
   }, [expenses]);
@@ -272,24 +282,39 @@ export function CashFlow() {
         (income) => income.is_active && income.frequency !== 'one_time'
       );
       activeRecurringIncome.forEach((income) => {
-        // For monthly income, use next_payment_date or calculate from payment_date
+        // For monthly income, extract the day of month and show it every month on that day
+        // but only starting from next_payment_date
         if (income.frequency === 'monthly') {
-          let paymentDate: Date;
+          let paymentDay: number;
+          let startDate: Date;
 
+          // Extract the day of month and start date from next_payment_date or payment_date
           if (income.next_payment_date) {
-            paymentDate = new Date(income.next_payment_date);
+            const paymentDate = new Date(income.next_payment_date);
+            paymentDay = paymentDate.getDate();
+            startDate = new Date(paymentDate);
           } else if (income.payment_date) {
-            paymentDate = new Date(income.payment_date);
+            const paymentDate = new Date(income.payment_date);
+            paymentDay = paymentDate.getDate();
+            startDate = new Date(paymentDate);
           } else {
             return; // No date available
           }
 
-          paymentDate.setHours(0, 0, 0, 0);
+          startDate.setHours(0, 0, 0, 0);
 
-          // Check if this income falls in the selected month
+          // Create the due date for the selected month
+          const dueDate = new Date(selectedYear, selectedMonth, paymentDay);
+
+          // Check if selected month is on or after the start date
+          if (selectedMonthEndDate < startDate) {
+            return; // Income hasn't started yet
+          }
+
+          // Only include if the date is valid (handles cases like Feb 30)
           if (
-            paymentDate.getMonth() === selectedMonth &&
-            paymentDate.getFullYear() === selectedYear
+            dueDate.getDate() === paymentDay &&
+            dueDate.getMonth() === selectedMonth
           ) {
             bills.push({
               type: 'income',
@@ -297,7 +322,7 @@ export function CashFlow() {
               name: income.name,
               amount: income.amount,
               category: income.category,
-              dueDate: paymentDate,
+              dueDate,
               isPaid: false, // Income doesn't have paid status
             });
           }
@@ -384,19 +409,87 @@ export function CashFlow() {
     isBillPaid,
   ]);
 
-  // Calculate totals - exclude paid bills when filter is 'all'
-  const totalAmount = useMemo(() => {
+  // Calculate separate totals for income and expenses/bills
+  const totalIncome = useMemo(() => {
+    return billsForMonth
+      .filter((bill) => bill.type === 'income')
+      .reduce((sum, bill) => sum + bill.amount, 0);
+  }, [billsForMonth]);
+
+  const totalBills = useMemo(() => {
     return billsForMonth
       .filter((bill) => {
-        // When paidFilter is 'all', exclude paid bills from total
-        if (paidFilter === 'all') {
-          return !bill.isPaid;
-        }
+        // Only count expenses/bills (not income)
+        if (bill.type === 'income') return false;
+
         // When filter is 'paid' or 'unpaid', include all (filtering is already done in billsForMonth)
         return true;
       })
       .reduce((sum, bill) => sum + bill.amount, 0);
-  }, [billsForMonth, paidFilter]);
+  }, [billsForMonth]);
+
+  // Calculate remaining bills (unpaid liabilities for the month)
+  const remainingBills = useMemo(() => {
+    return billsForMonth
+      .filter((bill) => {
+        // Only liabilities (not expenses or income)
+        if (bill.type !== 'liability') return false;
+        // Only unpaid
+        return !bill.isPaid;
+      })
+      .reduce((sum, bill) => sum + bill.amount, 0);
+  }, [billsForMonth]);
+
+  // Calculate income received for the month (only one-time payments that are received)
+  const incomeReceived = useMemo(() => {
+    if (!incomeSources) return 0;
+    const selectedMonthStart = new Date(selectedYear, selectedMonth, 1);
+    const selectedMonthEnd = new Date(selectedYear, selectedMonth + 1, 0);
+
+    return incomeSources
+      .filter((income) => {
+        // Only one-time payments that are received
+        if (income.frequency !== 'one_time' || !income.is_received)
+          return false;
+        if (!income.payment_date) return false;
+
+        const paymentDate = new Date(income.payment_date);
+        return (
+          paymentDate >= selectedMonthStart && paymentDate <= selectedMonthEnd
+        );
+      })
+      .reduce((sum, income) => sum + income.amount, 0);
+  }, [incomeSources, selectedYear, selectedMonth]);
+
+  // Calculate expenses for the month (one-time expenses)
+  const expensesForMonth = useMemo(() => {
+    if (!expenses) return 0;
+    const selectedMonthStart = new Date(selectedYear, selectedMonth, 1);
+    const selectedMonthEnd = new Date(selectedYear, selectedMonth + 1, 0);
+
+    return expenses
+      .filter((expense) => {
+        // Only one-time expenses
+        if (expense.frequency !== 'one_time') return false;
+        if (!expense.expense_date) return false;
+
+        const expenseDate = new Date(expense.expense_date);
+        return (
+          expenseDate >= selectedMonthStart && expenseDate <= selectedMonthEnd
+        );
+      })
+      .reduce((sum, expense) => sum + expense.amount, 0);
+  }, [expenses, selectedYear, selectedMonth]);
+
+  // Calculate remaining money (income received - expenses for the month)
+  const remainingMoney = useMemo(() => {
+    return incomeReceived - expensesForMonth;
+  }, [incomeReceived, expensesForMonth]);
+
+  // Calculate expected remaining cash (total income - total bills)
+  const expectedRemainingCash = useMemo(() => {
+    return totalIncome - totalBills;
+  }, [totalIncome, totalBills]);
 
   // Group bills by due date
   const billsByDate = useMemo(() => {
@@ -694,6 +787,99 @@ export function CashFlow() {
         });
       }
 
+      // Process recurring income sources
+      if (incomeSources) {
+        const activeRecurringIncome = incomeSources.filter(
+          (income) => income.is_active && income.frequency !== 'one_time'
+        );
+        activeRecurringIncome.forEach((income) => {
+          if (income.frequency === 'monthly') {
+            let paymentDay: number;
+            let startDate: Date;
+
+            // Extract the day of month and start date from next_payment_date or payment_date
+            if (income.next_payment_date) {
+              const paymentDate = new Date(income.next_payment_date);
+              paymentDay = paymentDate.getDate();
+              startDate = new Date(paymentDate);
+            } else if (income.payment_date) {
+              const paymentDate = new Date(income.payment_date);
+              paymentDay = paymentDate.getDate();
+              startDate = new Date(paymentDate);
+            } else {
+              return; // No date available
+            }
+
+            startDate.setHours(0, 0, 0, 0);
+
+            // Create the due date for the target month
+            const dueDate = new Date(targetYear, targetMonth, paymentDay);
+            const targetMonthEndDate = new Date(targetYear, targetMonth + 1, 0);
+            targetMonthEndDate.setHours(23, 59, 59, 999);
+
+            // Check if target month is on or after the start date
+            if (targetMonthEndDate < startDate) {
+              return; // Income hasn't started yet
+            }
+
+            // Only include if the date is valid (handles cases like Feb 30)
+            if (
+              dueDate.getDate() === paymentDay &&
+              dueDate.getMonth() === targetMonth
+            ) {
+              monthsData[monthKey].push({
+                type: 'income',
+                id: income.id,
+                name: income.name,
+                amount: income.amount,
+                category: income.category,
+                dueDate,
+                isPaid: false,
+              });
+            }
+          } else if (income.frequency === 'weekly') {
+            // For weekly income, calculate all occurrences in the target month
+            let startDate: Date;
+
+            if (income.next_payment_date) {
+              startDate = new Date(income.next_payment_date);
+            } else if (income.payment_date) {
+              startDate = new Date(income.payment_date);
+            } else {
+              return; // No date available
+            }
+
+            startDate.setHours(0, 0, 0, 0);
+
+            // Calculate weeks from start date to target month
+            const weeksDiff = Math.floor(
+              (monthStart.getTime() - startDate.getTime()) /
+                (7 * 24 * 60 * 60 * 1000)
+            );
+
+            // Find the first week that falls in the target month
+            const currentDate = new Date(startDate);
+            currentDate.setDate(currentDate.getDate() + weeksDiff * 7);
+
+            // Generate all weekly occurrences in the target month
+            while (currentDate <= monthEnd) {
+              if (currentDate >= monthStart && currentDate <= monthEnd) {
+                monthsData[monthKey].push({
+                  type: 'income',
+                  id: `${income.id}-${currentDate.getTime()}`,
+                  name: income.name,
+                  amount: income.amount,
+                  category: income.category,
+                  dueDate: new Date(currentDate),
+                  isPaid: false,
+                });
+              }
+              currentDate.setDate(currentDate.getDate() + 7);
+            }
+          }
+        });
+      }
+
       // Sort by due date
       monthsData[monthKey].sort(
         (a, b) => a.dueDate.getTime() - b.dueDate.getTime()
@@ -790,7 +976,7 @@ export function CashFlow() {
   };
 
   // Confirm marking bill as paid
-  const handleConfirmPaid = () => {
+  const handleConfirmPaid = async () => {
     if (!pendingBill) return;
 
     const { bill } = pendingBill;
@@ -800,17 +986,21 @@ export function CashFlow() {
     const today = new Date();
     const expenseDateStr = today.toISOString().split('T')[0];
 
-    createExpense({
-      description: bill.name,
-      amount: bill.amount,
-      category: 'Bills',
-      expense_date: expenseDateStr,
-      frequency: 'one_time',
-      liability_id: bill.id,
-    });
-
-    // Close the confirmation dialog
-    setPendingBill(null);
+    try {
+      await createExpenseAsync({
+        description: bill.name,
+        amount: bill.amount,
+        category: 'Bills',
+        expense_date: expenseDateStr,
+        frequency: 'one_time',
+        liability_id: bill.id, // Link expense to the liability
+      });
+      // Close the confirmation dialog after successful creation
+      setPendingBill(null);
+    } catch (error) {
+      console.error('Error creating expense:', error);
+      alert('Failed to mark bill as paid. Please try again.');
+    }
   };
 
   // Cancel marking bill as paid
@@ -1045,17 +1235,54 @@ export function CashFlow() {
 
           {/* Summary Card */}
           <div className="bg-white p-6 rounded-lg shadow">
-            <div className="flex items-center justify-between">
+            <div className="grid grid-cols-2 gap-6">
+              {/* Total Bills */}
+              <div>
+                <p className="text-sm font-medium text-gray-600">Total Bills</p>
+                <p className="text-2xl font-bold text-red-600 mt-1">
+                  {formatCurrency(totalBills)}
+                </p>
+              </div>
+
+              {/* Total Income */}
               <div>
                 <p className="text-sm font-medium text-gray-600">
-                  Total Bills for {monthNames[selectedMonth]}
+                  Total Income
                 </p>
-                <p className="text-3xl font-bold text-gray-900 mt-1">
-                  {formatCurrency(totalAmount)}
+                <p className="text-2xl font-bold text-green-600 mt-1">
+                  {formatCurrency(totalIncome)}
                 </p>
-                <p className="text-sm text-gray-500 mt-1">
-                  {billsForMonth.length}{' '}
-                  {billsForMonth.length === 1 ? 'bill' : 'bills'}
+              </div>
+
+              {/* Remaining Bills */}
+              <div>
+                <p className="text-sm font-medium text-gray-600">
+                  Remaining Bills
+                </p>
+                <p className="text-2xl font-bold text-orange-600 mt-1">
+                  {formatCurrency(remainingBills)}
+                </p>
+                <p className="text-xs text-gray-500 mt-1">Unpaid liabilities</p>
+              </div>
+
+              {/* Remaining Money */}
+              <div>
+                <p className="text-sm font-medium text-gray-600">
+                  Cash on hand
+                </p>
+                <p
+                  className={`text-2xl font-bold mt-1 ${
+                    remainingMoney >= 0 ? 'text-green-600' : 'text-red-600'
+                  }`}
+                >
+                  {formatCurrency(remainingMoney)}
+                </p>
+                <p className="text-xs text-gray-500 mt-1">
+                  Income received - Expenses
+                </p>
+                <p className="text-xs text-gray-400 mt-2">
+                  Expected remaining cash:{' '}
+                  {formatCurrency(expectedRemainingCash)}
                 </p>
               </div>
             </div>
@@ -1074,8 +1301,14 @@ export function CashFlow() {
                 .sort((a, b) => parseInt(a) - parseInt(b))
                 .map((day) => {
                   const dayBills = billsByDate[parseInt(day)];
-                  const dayTotal = dayBills
+                  // Separate totals for income and bills
+                  const dayIncome = dayBills
+                    .filter((bill) => bill.type === 'income')
+                    .reduce((sum, bill) => sum + bill.amount, 0);
+                  const dayBillsTotal = dayBills
                     .filter((bill) => {
+                      // Only count expenses/bills (not income)
+                      if (bill.type === 'income') return false;
                       // When paidFilter is 'all', exclude paid bills from total
                       if (paidFilter === 'all') {
                         return !bill.isPaid;
@@ -1112,16 +1345,33 @@ export function CashFlow() {
                             </p>
                           </div>
                           <div className="text-right">
-                            <p className="text-sm font-medium text-gray-600">
-                              Total
-                            </p>
-                            <p
-                              className={`text-xl font-bold ${
-                                isPast ? 'text-red-600' : 'text-blue-600'
-                              }`}
-                            >
-                              {formatCurrency(dayTotal)}
-                            </p>
+                            {dayIncome > 0 && (
+                              <div className="mb-2">
+                                <p className="text-xs font-medium text-gray-500">
+                                  Income
+                                </p>
+                                <p className="text-lg font-bold text-green-600">
+                                  {formatCurrency(dayIncome)}
+                                </p>
+                              </div>
+                            )}
+                            {dayBillsTotal > 0 && (
+                              <div>
+                                <p className="text-xs font-medium text-gray-500">
+                                  Bills
+                                </p>
+                                <p
+                                  className={`text-lg font-bold ${
+                                    isPast ? 'text-red-600' : 'text-blue-600'
+                                  }`}
+                                >
+                                  {formatCurrency(dayBillsTotal)}
+                                </p>
+                              </div>
+                            )}
+                            {dayIncome === 0 && dayBillsTotal === 0 && (
+                              <p className="text-sm text-gray-400">₱0.00</p>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -1221,8 +1471,14 @@ export function CashFlow() {
             .map((monthKey) => {
               const [year, month] = monthKey.split('-').map(Number);
               const monthBills = billsByMonth[monthKey];
-              const monthTotal = monthBills
+              // Separate totals for income and bills
+              const monthIncome = monthBills
+                .filter((bill) => bill.type === 'income')
+                .reduce((sum, bill) => sum + bill.amount, 0);
+              const monthBillsTotal = monthBills
                 .filter((bill) => {
+                  // Only count expenses/bills (not income)
+                  if (bill.type === 'income') return false;
                   // When paidFilter is 'all', exclude paid bills from total
                   if (paidFilter === 'all') {
                     return !bill.isPaid;
@@ -1270,23 +1526,42 @@ export function CashFlow() {
                         )}
                       </div>
                       <div className="text-right">
-                        <p className="text-sm font-medium text-gray-600">
-                          Total
-                        </p>
-                        <p
-                          className={`text-2xl font-bold ${
-                            isPastMonth
-                              ? 'text-gray-600'
-                              : isCurrentMonth
-                              ? 'text-indigo-600'
-                              : 'text-blue-600'
-                          }`}
-                        >
-                          {formatCurrency(monthTotal)}
-                        </p>
-                        <p className="text-sm text-gray-500 mt-1">
+                        {monthIncome > 0 && (
+                          <div className="mb-2">
+                            <p className="text-xs font-medium text-gray-500">
+                              Income
+                            </p>
+                            <p className="text-xl font-bold text-green-600">
+                              {formatCurrency(monthIncome)}
+                            </p>
+                          </div>
+                        )}
+                        {monthBillsTotal > 0 && (
+                          <div>
+                            <p className="text-xs font-medium text-gray-500">
+                              Bills
+                            </p>
+                            <p
+                              className={`text-xl font-bold ${
+                                isPastMonth
+                                  ? 'text-gray-600'
+                                  : isCurrentMonth
+                                  ? 'text-indigo-600'
+                                  : 'text-blue-600'
+                              }`}
+                            >
+                              {formatCurrency(monthBillsTotal)}
+                            </p>
+                          </div>
+                        )}
+                        {monthIncome === 0 && monthBillsTotal === 0 && (
+                          <p className="text-sm text-gray-400">₱0.00</p>
+                        )}
+                        <p className="text-sm text-gray-500 mt-2">
                           {monthBills.length}{' '}
-                          {monthBills.length === 1 ? 'bill' : 'bills'}
+                          {monthBills.length === 1
+                            ? 'transaction'
+                            : 'transactions'}
                         </p>
                       </div>
                     </div>
@@ -1297,8 +1572,14 @@ export function CashFlow() {
                       .sort((a, b) => parseInt(a) - parseInt(b))
                       .map((day) => {
                         const dayBills = billsByDateForMonth[parseInt(day)];
-                        const dayTotal = dayBills
+                        // Separate totals for income and bills
+                        const dayIncome = dayBills
+                          .filter((bill) => bill.type === 'income')
+                          .reduce((sum, bill) => sum + bill.amount, 0);
+                        const dayBillsTotal = dayBills
                           .filter((bill) => {
+                            // Only count expenses/bills (not income)
+                            if (bill.type === 'income') return false;
                             // When paidFilter is 'all', exclude paid bills from total
                             if (paidFilter === 'all') {
                               return !bill.isPaid;
@@ -1330,13 +1611,25 @@ export function CashFlow() {
                                   {parseInt(day)} {monthNames[month]}
                                 </p>
                               </div>
-                              <p
-                                className={`text-lg font-semibold ${
-                                  isPast ? 'text-gray-500' : 'text-gray-900'
-                                }`}
-                              >
-                                {formatCurrency(dayTotal)}
-                              </p>
+                              <div className="text-right">
+                                {dayIncome > 0 && (
+                                  <p className="text-sm font-semibold text-green-600">
+                                    +{formatCurrency(dayIncome)}
+                                  </p>
+                                )}
+                                {dayBillsTotal > 0 && (
+                                  <p
+                                    className={`text-sm font-semibold ${
+                                      isPast ? 'text-gray-500' : 'text-red-600'
+                                    }`}
+                                  >
+                                    -{formatCurrency(dayBillsTotal)}
+                                  </p>
+                                )}
+                                {dayIncome === 0 && dayBillsTotal === 0 && (
+                                  <p className="text-sm text-gray-400">₱0.00</p>
+                                )}
+                              </div>
                             </div>
                             <div className="space-y-2">
                               {dayBills.map((bill, index) => (

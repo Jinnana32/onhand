@@ -9,7 +9,7 @@ interface LayoutProps {
 const navigation = [
   { name: 'Dashboard', href: '/', icon: '📊' },
   { name: 'Calculator', href: '/calculator', icon: '🧮' },
-  { name: 'Upcoming Bills', href: '/upcoming-bills', icon: '📅' },
+  { name: 'Cash Flow', href: '/cash-flow', icon: '💰' },
   { name: 'Credit Cards', href: '/credit-cards', icon: '💳' },
   { name: 'Liabilities', href: '/liabilities', icon: '📋' },
   { name: 'Income', href: '/income', icon: '💰' },

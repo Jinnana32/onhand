@@ -402,7 +402,6 @@ export function Liabilities() {
               <option value="all">All Categories</option>
               <option value="credit_card">Credit Card</option>
               <option value="loan">Loan</option>
-              <option value="installment">Installment</option>
               <option value="recurring_bill">Recurring Bill</option>
               <option value="other">Other</option>
             </select>
@@ -501,6 +500,9 @@ export function Liabilities() {
                   Category
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Payment Type
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Balance / Limit
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -545,6 +547,29 @@ export function Liabilities() {
                     <span className="px-2 py-1 text-xs font-medium bg-purple-100 text-purple-800 rounded">
                       {liability.category.replace('_', ' ')}
                     </span>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="text-sm text-gray-900">
+                      {liability.payment_type ? (
+                        <span
+                          className={`px-2 py-1 text-xs font-medium rounded ${
+                            liability.payment_type === 'installment'
+                              ? 'bg-orange-100 text-orange-800'
+                              : 'bg-green-100 text-green-800'
+                          }`}
+                        >
+                          {liability.payment_type === 'installment'
+                            ? `Installment${
+                                liability.months_to_pay
+                                  ? ` (${liability.months_to_pay} months)`
+                                  : ''
+                              }`
+                            : 'Straight'}
+                        </span>
+                      ) : (
+                        <span className="text-gray-400">—</span>
+                      )}
+                    </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="text-sm text-gray-900">
