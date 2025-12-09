@@ -50,6 +50,7 @@ export interface IncomeSource {
   payment_date: string | null
   is_received: boolean
   is_active: boolean
+  parent_income_id: string | null // Reference to parent recurring income (for generated one-time income)
   created_at: string
   updated_at: string
 }

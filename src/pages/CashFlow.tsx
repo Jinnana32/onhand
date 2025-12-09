@@ -19,7 +19,12 @@ export function CashFlow() {
     isLoading: isLoadingExpenses,
     createExpenseAsync,
   } = useExpenses();
-  const { incomeSources, isLoading: isLoadingIncome } = useIncomeSources();
+  const {
+    incomeSources,
+    isLoading: isLoadingIncome,
+    updateIncomeSourceAsync,
+    createIncomeSourceAsync,
+  } = useIncomeSources();
   const isLoading =
     isLoadingLiabilities || isLoadingExpenses || isLoadingIncome;
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
@@ -38,6 +43,17 @@ export function CashFlow() {
       name: string;
       amount: number;
       isPaid: boolean;
+    };
+    year: number;
+    month: number;
+  } | null>(null);
+  const [pendingIncome, setPendingIncome] = useState<{
+    income: {
+      id: string;
+      name: string;
+      amount: number;
+      frequency?: 'monthly' | 'weekly' | 'one_time';
+      category?: 'salary' | 'project' | 'other';
     };
     year: number;
     month: number;
@@ -312,10 +328,27 @@ export function CashFlow() {
             return; // Income hasn't started yet
           }
 
+          // Check if there's a generated one-time income for this recurring income in this month
+          const generatedIncome = incomeSources?.find(
+            (inc) =>
+              inc.parent_income_id === income.id &&
+              inc.frequency === 'one_time' &&
+              inc.payment_date &&
+              (() => {
+                const genDate = new Date(inc.payment_date);
+                return (
+                  genDate.getMonth() === selectedMonth &&
+                  genDate.getFullYear() === selectedYear
+                );
+              })()
+          );
+
           // Only include if the date is valid (handles cases like Feb 30)
+          // AND if there's no generated income for this month (generated income will be shown instead)
           if (
             dueDate.getDate() === paymentDay &&
-            dueDate.getMonth() === selectedMonth
+            dueDate.getMonth() === selectedMonth &&
+            !generatedIncome
           ) {
             bills.push({
               type: 'income',
@@ -362,16 +395,35 @@ export function CashFlow() {
               currentDate >= selectedMonthStart &&
               currentDate <= selectedMonthEnd
             ) {
-              bills.push({
-                type: 'income',
-                id: `${income.id}-${currentDate.getTime()}`, // Unique ID for each occurrence
-                name: income.name,
-                amount: income.amount,
-                category: income.category,
-                dueDate: new Date(currentDate),
-                isPaid: false,
-                isReceived: false, // Recurring income is not tracked as received per month
-              });
+              // Check if there's a generated one-time income for this recurring income on this date
+              const generatedIncome = incomeSources?.find(
+                (inc) =>
+                  inc.parent_income_id === income.id &&
+                  inc.frequency === 'one_time' &&
+                  inc.payment_date &&
+                  (() => {
+                    const genDate = new Date(inc.payment_date);
+                    const currentDateStr = currentDate
+                      .toISOString()
+                      .split('T')[0];
+                    const genDateStr = genDate.toISOString().split('T')[0];
+                    return currentDateStr === genDateStr;
+                  })()
+              );
+
+              // Only add if there's no generated income for this date
+              if (!generatedIncome) {
+                bills.push({
+                  type: 'income',
+                  id: `${income.id}-${currentDate.getTime()}`, // Unique ID for each occurrence
+                  name: income.name,
+                  amount: income.amount,
+                  category: income.category,
+                  dueDate: new Date(currentDate),
+                  isPaid: false,
+                  isReceived: false, // Recurring income is not tracked as received per month
+                });
+              }
             }
             currentDate.setDate(currentDate.getDate() + 7);
           }
@@ -848,10 +900,27 @@ export function CashFlow() {
               return; // Income hasn't started yet
             }
 
+            // Check if there's a generated one-time income for this recurring income in this month
+            const generatedIncome = incomeSources?.find(
+              (inc) =>
+                inc.parent_income_id === income.id &&
+                inc.frequency === 'one_time' &&
+                inc.payment_date &&
+                (() => {
+                  const genDate = new Date(inc.payment_date);
+                  return (
+                    genDate.getMonth() === targetMonth &&
+                    genDate.getFullYear() === targetYear
+                  );
+                })()
+            );
+
             // Only include if the date is valid (handles cases like Feb 30)
+            // AND if there's no generated income for this month (generated income will be shown instead)
             if (
               dueDate.getDate() === paymentDay &&
-              dueDate.getMonth() === targetMonth
+              dueDate.getMonth() === targetMonth &&
+              !generatedIncome
             ) {
               monthsData[monthKey].push({
                 type: 'income',
@@ -891,16 +960,35 @@ export function CashFlow() {
             // Generate all weekly occurrences in the target month
             while (currentDate <= monthEnd) {
               if (currentDate >= monthStart && currentDate <= monthEnd) {
-                monthsData[monthKey].push({
-                  type: 'income',
-                  id: `${income.id}-${currentDate.getTime()}`,
-                  name: income.name,
-                  amount: income.amount,
-                  category: income.category,
-                  dueDate: new Date(currentDate),
-                  isPaid: false,
-                  isReceived: false, // Recurring income is not tracked as received per month
-                });
+                // Check if there's a generated one-time income for this recurring income on this date
+                const generatedIncome = incomeSources?.find(
+                  (inc) =>
+                    inc.parent_income_id === income.id &&
+                    inc.frequency === 'one_time' &&
+                    inc.payment_date &&
+                    (() => {
+                      const genDate = new Date(inc.payment_date);
+                      const currentDateStr = currentDate
+                        .toISOString()
+                        .split('T')[0];
+                      const genDateStr = genDate.toISOString().split('T')[0];
+                      return currentDateStr === genDateStr;
+                    })()
+                );
+
+                // Only add if there's no generated income for this date
+                if (!generatedIncome) {
+                  monthsData[monthKey].push({
+                    type: 'income',
+                    id: `${income.id}-${currentDate.getTime()}`,
+                    name: income.name,
+                    amount: income.amount,
+                    category: income.category,
+                    dueDate: new Date(currentDate),
+                    isPaid: false,
+                    isReceived: false, // Recurring income is not tracked as received per month
+                  });
+                }
               }
               currentDate.setDate(currentDate.getDate() + 7);
             }
@@ -1064,6 +1152,71 @@ export function CashFlow() {
       console.error('Error creating expense:', error);
       alert('Failed to mark bill as paid. Please try again.');
     }
+  };
+
+  // Handle marking income as received
+  const handleMarkIncomeReceived = (
+    income: {
+      id: string;
+      name: string;
+      amount: number;
+      frequency?: 'monthly' | 'weekly' | 'one_time';
+      category?: 'salary' | 'project' | 'other';
+    },
+    year: number,
+    month: number
+  ) => {
+    // Show confirmation dialog before marking as received
+    setPendingIncome({ income, year, month });
+  };
+
+  // Confirm marking income as received
+  const handleConfirmIncomeReceived = async () => {
+    if (!pendingIncome) return;
+
+    const { income } = pendingIncome;
+
+    // Use today's date
+    const today = new Date();
+    const todayStr = today.toISOString().split('T')[0];
+
+    try {
+      // Check if it's monthly/weekly (recurring) or one-time
+      if (income.frequency === 'monthly' || income.frequency === 'weekly') {
+        // For recurring income: create a new one-time income with received = true
+        // Link it to the parent income and add identifier in the name
+        await createIncomeSourceAsync({
+          name: `Generated from ${income.name}`,
+          amount: income.amount,
+          frequency: 'one_time',
+          category: income.category || 'other',
+          is_received: true,
+          payment_date: todayStr,
+          next_payment_date: todayStr,
+          parent_income_id: income.id, // Link to parent recurring income
+        });
+      } else {
+        // For one-time income: just mark it as received
+        await updateIncomeSourceAsync({
+          id: income.id,
+          updates: {
+            is_received: true,
+            payment_date: todayStr,
+            next_payment_date: todayStr,
+          },
+        });
+      }
+      // Close the confirmation dialog after successful update
+      setPendingIncome(null);
+    } catch (error) {
+      console.error('Error updating income:', error);
+      alert('Failed to mark income as received. Please try again.');
+    }
+  };
+
+  // Cancel marking income as received
+  const handleCancelIncomeReceived = () => {
+    setPendingIncome(null);
   };
 
   // Cancel marking bill as paid
@@ -1310,7 +1463,7 @@ export function CashFlow() {
               {/* Total Income */}
               <div>
                 <p className="text-sm font-medium text-gray-600">
-                  Total Income
+                  Receivable Income
                 </p>
                 <p className="text-2xl font-bold text-green-600 mt-1">
                   {formatCurrency(totalIncome)}
@@ -1444,7 +1597,10 @@ export function CashFlow() {
                           <div
                             key={`${bill.type}-${bill.id}-${index}`}
                             className={`flex items-center justify-between py-3 border-b border-gray-100 last:border-0 ${
-                              bill.isPaid ? 'opacity-60' : ''
+                              bill.isPaid ||
+                              (bill.type === 'income' && bill.isReceived)
+                                ? 'opacity-60'
+                                : ''
                             }`}
                           >
                             <div className="flex items-center gap-3 flex-1">
@@ -1463,11 +1619,40 @@ export function CashFlow() {
                                   className="h-5 w-5 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                                 />
                               )}
+                              {bill.type === 'income' && (
+                                <input
+                                  type="checkbox"
+                                  checked={bill.isReceived || false}
+                                  disabled={bill.isReceived || false}
+                                  onChange={() => {
+                                    // Find the original income source to get frequency and category
+                                    const originalIncome = incomeSources?.find(
+                                      (inc) =>
+                                        inc.id === bill.id ||
+                                        bill.id.startsWith(inc.id)
+                                    );
+                                    handleMarkIncomeReceived(
+                                      {
+                                        id: bill.id,
+                                        name: bill.name,
+                                        amount: bill.amount,
+                                        frequency: originalIncome?.frequency,
+                                        category: originalIncome?.category,
+                                      },
+                                      selectedYear,
+                                      selectedMonth
+                                    );
+                                  }}
+                                  className="h-5 w-5 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                                />
+                              )}
                               <div className="flex-1">
                                 <div className="flex items-center gap-2 mb-1">
                                   <h4
                                     className={`font-medium ${
-                                      bill.isPaid
+                                      bill.isPaid ||
+                                      (bill.type === 'income' &&
+                                        bill.isReceived)
                                         ? 'text-gray-500 line-through'
                                         : 'text-gray-900'
                                     }`}
@@ -1699,7 +1884,10 @@ export function CashFlow() {
                                 <div
                                   key={`${bill.type}-${bill.id}-${index}`}
                                   className={`flex items-center justify-between py-2 pl-2 border-l-2 border-gray-100 ${
-                                    bill.isPaid ? 'opacity-60' : ''
+                                    bill.isPaid ||
+                                    (bill.type === 'income' && bill.isReceived)
+                                      ? 'opacity-60'
+                                      : ''
                                   }`}
                                 >
                                   <div className="flex items-center gap-3 flex-1">
@@ -1714,11 +1902,43 @@ export function CashFlow() {
                                         className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                                       />
                                     )}
+                                    {bill.type === 'income' && (
+                                      <input
+                                        type="checkbox"
+                                        checked={bill.isReceived || false}
+                                        disabled={bill.isReceived || false}
+                                        onChange={() => {
+                                          // Find the original income source to get frequency and category
+                                          const originalIncome =
+                                            incomeSources?.find(
+                                              (inc) =>
+                                                inc.id === bill.id ||
+                                                bill.id.startsWith(inc.id)
+                                            );
+                                          handleMarkIncomeReceived(
+                                            {
+                                              id: bill.id,
+                                              name: bill.name,
+                                              amount: bill.amount,
+                                              frequency:
+                                                originalIncome?.frequency,
+                                              category:
+                                                originalIncome?.category,
+                                            },
+                                            year,
+                                            month
+                                          );
+                                        }}
+                                        className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                                      />
+                                    )}
                                     <div className="flex-1">
                                       <div className="flex items-center gap-2">
                                         <h4
                                           className={`text-sm font-medium ${
-                                            bill.isPaid
+                                            bill.isPaid ||
+                                            (bill.type === 'income' &&
+                                              bill.isReceived)
                                               ? 'text-gray-500 line-through'
                                               : 'text-gray-900'
                                           }`}
@@ -1879,6 +2099,82 @@ export function CashFlow() {
                 className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 border border-transparent rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
               >
                 Confirm Payment
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* Confirmation Modal for Marking Income as Received */}
+      <Modal
+        isOpen={pendingIncome !== null}
+        onClose={handleCancelIncomeReceived}
+        title="Mark Income as Received"
+      >
+        {pendingIncome && (
+          <div className="space-y-4">
+            <div className="bg-yellow-50 border border-yellow-200 rounded-md p-4">
+              <div className="flex">
+                <div className="flex-shrink-0">
+                  <svg
+                    className="h-5 w-5 text-yellow-400"
+                    viewBox="0 0 20 20"
+                    fill="currentColor"
+                  >
+                    <path
+                      fillRule="evenodd"
+                      d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z"
+                      clipRule="evenodd"
+                    />
+                  </svg>
+                </div>
+                <div className="ml-3">
+                  <h3 className="text-sm font-medium text-yellow-800">
+                    Confirm Income Received
+                  </h3>
+                  <div className="mt-2 text-sm text-yellow-700">
+                    <p>
+                      Are you sure you want to mark this income as received?
+                      This will update your cash on hand.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-gray-50 rounded-md p-4">
+              <dl className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <dt className="text-sm font-medium text-gray-500">
+                    Income Name
+                  </dt>
+                  <dd className="mt-1 text-sm text-gray-900">
+                    {pendingIncome.income.name}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-sm font-medium text-gray-500">Amount</dt>
+                  <dd className="mt-1 text-sm text-gray-900">
+                    {formatCurrency(pendingIncome.income.amount)}
+                  </dd>
+                </div>
+              </dl>
+            </div>
+
+            <div className="flex justify-end space-x-3">
+              <button
+                type="button"
+                onClick={handleCancelIncomeReceived}
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmIncomeReceived}
+                className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 border border-transparent rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+              >
+                Confirm Received
               </button>
             </div>
           </div>

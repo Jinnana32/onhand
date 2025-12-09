@@ -39,6 +39,7 @@ interface CreateIncomeSourceInput {
   next_payment_date?: string | null
   payment_date?: string | null
   is_received?: boolean
+  parent_income_id?: string | null // Reference to parent recurring income
 }
 
 interface UpdateIncomeSourceInput extends Partial<CreateIncomeSourceInput> {
