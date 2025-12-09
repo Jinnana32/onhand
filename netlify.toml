@@ -1,0 +1,43 @@
+# Netlify Configuration for SolBills
+
+[build]
+  # Build command for Vite
+  command = "npm run build"
+  # Publish directory (Vite outputs to dist)
+  publish = "dist"
+
+# Redirect rules for SPA routing
+# All routes should serve index.html for client-side routing
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+# Headers for security and performance
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    X-XSS-Protection = "1; mode=block"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Permissions-Policy = "geolocation=(), microphone=(), camera=()"
+
+# Cache static assets
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+# Environment variables
+# Note: Set these in Netlify Dashboard > Site Settings > Environment Variables
+# Required:
+#   - VITE_SUPABASE_URL
+#   - VITE_SUPABASE_ANON_KEY
+# Optional:
+#   - VITE_CLAUDE_API_KEY (if using Claude API directly in client)
+
+# Build environment
+[build.environment]
+  NODE_VERSION = "18"
+
