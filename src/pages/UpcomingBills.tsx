@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { useLiabilities, useExpenses } from '../hooks';
 import { formatCurrency } from '../lib/utils';
+import { Modal } from '../components/Modal';
 
 type ViewMode = 'calendar' | 'list';
 type FilterGroup =
@@ -12,7 +13,11 @@ type FilterGroup =
 
 export function UpcomingBills() {
   const { liabilities, isLoading: isLoadingLiabilities } = useLiabilities();
-  const { expenses, isLoading: isLoadingExpenses } = useExpenses();
+  const {
+    expenses,
+    isLoading: isLoadingExpenses,
+    createExpense,
+  } = useExpenses();
   const isLoading = isLoadingLiabilities || isLoadingExpenses;
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
@@ -20,6 +25,20 @@ export function UpcomingBills() {
   const [selectedFilters, setSelectedFilters] = useState<FilterGroup[]>([]);
   const [isFilterDropdownOpen, setIsFilterDropdownOpen] = useState(false);
   const filterDropdownRef = useRef<HTMLDivElement>(null);
+  const [paidFilter, setPaidFilter] = useState<'all' | 'paid' | 'unpaid'>(
+    'all'
+  );
+  const [pendingBill, setPendingBill] = useState<{
+    bill: {
+      type: 'liability' | 'expense';
+      id: string;
+      name: string;
+      amount: number;
+      isPaid: boolean;
+    };
+    year: number;
+    month: number;
+  } | null>(null);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -80,15 +99,45 @@ export function UpcomingBills() {
     return 'other';
   };
 
+  // Helper function to check if a bill is paid for a specific month
+  // We check if there's an expense with the liability_id that was created
+  // during or after the bill's due month (to handle cases where payment is made late)
+  const isBillPaid = useMemo(() => {
+    return (liabilityId: string, year: number, month: number) => {
+      if (!expenses) return false;
+
+      // Find all expenses for this liability
+      const liabilityExpenses = expenses.filter(
+        (e) => e.liability_id === liabilityId
+      );
+
+      if (liabilityExpenses.length === 0) return false;
+
+      // Check if any expense was created during or after the bill's due month
+      // This handles late payments - if you pay in January for a December bill, it still counts
+      const billDueDate = new Date(year, month, 1);
+      billDueDate.setHours(0, 0, 0, 0);
+
+      return liabilityExpenses.some((expense) => {
+        const expenseDate = new Date(expense.expense_date);
+        expenseDate.setHours(0, 0, 0, 0);
+        // Expense must be created during or after the bill's due month
+        return expenseDate >= billDueDate;
+      });
+    };
+  }, [expenses]);
+
   // Filter active liabilities and recurring expenses, calculate which ones are due in the selected month
   const billsForMonth = useMemo(() => {
     const bills: Array<{
       type: 'liability' | 'expense';
+      id: string; // liability id or expense id
       name: string;
       amount: number;
       category: string;
       source?: string | null;
       dueDate: Date;
+      isPaid: boolean;
     }> = [];
     const selectedMonthDate = new Date(selectedYear, selectedMonth, 1);
     const selectedMonthEndDate = new Date(selectedYear, selectedMonth + 1, 0);
@@ -128,13 +177,20 @@ export function UpcomingBills() {
         ) {
           // Check if this specific due date is within the payment period
           if (!endDate || dueDate <= endDate) {
+            const isPaid = isBillPaid(
+              liability.id,
+              selectedYear,
+              selectedMonth
+            );
             bills.push({
               type: 'liability',
+              id: liability.id,
               name: liability.name,
               amount: liability.amount,
               category: liability.category,
               source: liability.source,
               dueDate,
+              isPaid,
             });
           }
         }
@@ -167,10 +223,12 @@ export function UpcomingBills() {
         ) {
           bills.push({
             type: 'expense',
+            id: expense.id,
             name: expense.description,
             amount: expense.amount,
             category: expense.category || 'Bills',
             dueDate,
+            isPaid: false, // Recurring expenses are tracked differently
           });
         }
       });
@@ -181,16 +239,32 @@ export function UpcomingBills() {
       (a, b) => a.dueDate.getTime() - b.dueDate.getTime()
     );
 
-    // Apply filters if any are selected
+    // Apply category filters if any are selected
+    let filteredBills = sortedBills;
     if (selectedFilters.length > 0) {
-      return sortedBills.filter((bill) => {
+      filteredBills = sortedBills.filter((bill) => {
         const filterGroup = getBillFilterGroup(bill);
         return selectedFilters.includes(filterGroup);
       });
     }
 
-    return sortedBills;
-  }, [liabilities, expenses, selectedMonth, selectedYear, selectedFilters]);
+    // Apply paid/unpaid filter
+    if (paidFilter === 'paid') {
+      filteredBills = filteredBills.filter((bill) => bill.isPaid);
+    } else if (paidFilter === 'unpaid') {
+      filteredBills = filteredBills.filter((bill) => !bill.isPaid);
+    }
+
+    return filteredBills;
+  }, [
+    liabilities,
+    expenses,
+    selectedMonth,
+    selectedYear,
+    selectedFilters,
+    paidFilter,
+    isBillPaid,
+  ]);
 
   // Calculate totals
   const totalAmount = useMemo(() => {
@@ -276,11 +350,13 @@ export function UpcomingBills() {
       string,
       Array<{
         type: 'liability' | 'expense';
+        id: string;
         name: string;
         amount: number;
         category: string;
         source?: string | null;
         dueDate: Date;
+        isPaid: boolean;
       }>
     > = {};
 
@@ -329,13 +405,16 @@ export function UpcomingBills() {
           ) {
             // Check if this specific due date is within the payment period
             if (!endDate || dueDate <= endDate) {
+              const isPaid = isBillPaid(liability.id, targetYear, targetMonth);
               monthsData[monthKey].push({
                 type: 'liability',
+                id: liability.id,
                 name: liability.name,
                 amount: liability.amount,
                 category: liability.category,
                 source: liability.source,
                 dueDate,
+                isPaid,
               });
             }
           }
@@ -368,10 +447,12 @@ export function UpcomingBills() {
           ) {
             monthsData[monthKey].push({
               type: 'expense',
+              id: expense.id,
               name: expense.description,
               amount: expense.amount,
               category: expense.category || 'Bills',
               dueDate,
+              isPaid: false, // Recurring expenses are tracked differently
             });
           }
         });
@@ -382,17 +463,35 @@ export function UpcomingBills() {
         (a, b) => a.dueDate.getTime() - b.dueDate.getTime()
       );
 
-      // Apply filters if any are selected
+      // Apply category filters if any are selected
       if (selectedFilters.length > 0) {
         monthsData[monthKey] = monthsData[monthKey].filter((bill) => {
           const filterGroup = getBillFilterGroup(bill);
           return selectedFilters.includes(filterGroup);
         });
       }
+
+      // Apply paid/unpaid filter
+      if (paidFilter === 'paid') {
+        monthsData[monthKey] = monthsData[monthKey].filter(
+          (bill) => bill.isPaid
+        );
+      } else if (paidFilter === 'unpaid') {
+        monthsData[monthKey] = monthsData[monthKey].filter(
+          (bill) => !bill.isPaid
+        );
+      }
     }
 
     return monthsData;
-  }, [liabilities, expenses, viewMode, selectedFilters]);
+  }, [
+    liabilities,
+    expenses,
+    viewMode,
+    selectedFilters,
+    paidFilter,
+    isBillPaid,
+  ]);
 
   if (isLoading) {
     return (
@@ -426,6 +525,59 @@ export function UpcomingBills() {
         ? prev.filter((f) => f !== filter)
         : [...prev, filter]
     );
+  };
+
+  // Handle marking a bill as paid
+  const handleTogglePaid = (
+    bill: {
+      type: 'liability' | 'expense';
+      id: string;
+      name: string;
+      amount: number;
+      isPaid: boolean;
+    },
+    year: number,
+    month: number
+  ) => {
+    // Only liabilities can be marked as paid (expenses are tracked differently)
+    if (bill.type !== 'liability') return;
+
+    // Don't allow unchecking - bills can't be unpaid once marked as paid
+    if (bill.isPaid) {
+      return;
+    }
+
+    // Show confirmation dialog before marking as paid
+    setPendingBill({ bill, year, month });
+  };
+
+  // Confirm marking bill as paid
+  const handleConfirmPaid = () => {
+    if (!pendingBill) return;
+
+    const { bill } = pendingBill;
+
+    // Create an expense to mark this as paid
+    // Use today's date, not the first of the month
+    const today = new Date();
+    const expenseDateStr = today.toISOString().split('T')[0];
+
+    createExpense({
+      description: bill.name,
+      amount: bill.amount,
+      category: 'Bills',
+      expense_date: expenseDateStr,
+      frequency: 'one_time',
+      liability_id: bill.id,
+    });
+
+    // Close the confirmation dialog
+    setPendingBill(null);
+  };
+
+  // Cancel marking bill as paid
+  const handleCancelPaid = () => {
+    setPendingBill(null);
   };
 
   return (
@@ -495,6 +647,18 @@ export function UpcomingBills() {
               </div>
             )}
           </div>
+          {/* Paid/Unpaid Filter */}
+          <select
+            value={paidFilter}
+            onChange={(e) =>
+              setPaidFilter(e.target.value as 'all' | 'paid' | 'unpaid')
+            }
+            className="px-4 py-2 bg-white border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+          >
+            <option value="all">All Bills</option>
+            <option value="paid">Paid</option>
+            <option value="unpaid">Unpaid</option>
+          </select>
           <div className="flex items-center gap-2 bg-gray-100 p-1 rounded-lg">
             <button
               onClick={() => setViewMode('calendar')}
@@ -722,34 +886,65 @@ export function UpcomingBills() {
                       <div className="px-6 py-4 space-y-3">
                         {dayBills.map((bill, index) => (
                           <div
-                            key={`${bill.type}-${bill.name}-${index}`}
-                            className="flex items-center justify-between py-3 border-b border-gray-100 last:border-0"
+                            key={`${bill.type}-${bill.id}-${index}`}
+                            className={`flex items-center justify-between py-3 border-b border-gray-100 last:border-0 ${
+                              bill.isPaid ? 'opacity-60' : ''
+                            }`}
                           >
-                            <div className="flex-1">
-                              <div className="flex items-center gap-2 mb-1">
-                                <h4 className="font-medium text-gray-900">
-                                  {bill.name}
-                                </h4>
-                                <span
-                                  className={`px-2 py-1 text-xs font-medium rounded ${
-                                    bill.type === 'expense'
-                                      ? 'bg-green-100 text-green-800'
-                                      : getCategoryColor(bill.category)
-                                  }`}
-                                >
-                                  {bill.type === 'expense'
-                                    ? 'Recurring Expense'
-                                    : getCategoryLabel(bill.category)}
-                                </span>
-                              </div>
-                              {bill.source && (
-                                <p className="text-sm text-gray-500">
-                                  {bill.source}
-                                </p>
+                            <div className="flex items-center gap-3 flex-1">
+                              {bill.type === 'liability' && (
+                                <input
+                                  type="checkbox"
+                                  checked={bill.isPaid}
+                                  disabled={bill.isPaid}
+                                  onChange={() =>
+                                    handleTogglePaid(
+                                      bill,
+                                      selectedYear,
+                                      selectedMonth
+                                    )
+                                  }
+                                  className="h-5 w-5 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                                />
                               )}
+                              <div className="flex-1">
+                                <div className="flex items-center gap-2 mb-1">
+                                  <h4
+                                    className={`font-medium ${
+                                      bill.isPaid
+                                        ? 'text-gray-500 line-through'
+                                        : 'text-gray-900'
+                                    }`}
+                                  >
+                                    {bill.name}
+                                  </h4>
+                                  <span
+                                    className={`px-2 py-1 text-xs font-medium rounded ${
+                                      bill.type === 'expense'
+                                        ? 'bg-green-100 text-green-800'
+                                        : getCategoryColor(bill.category)
+                                    }`}
+                                  >
+                                    {bill.type === 'expense'
+                                      ? 'Recurring Expense'
+                                      : getCategoryLabel(bill.category)}
+                                  </span>
+                                </div>
+                                {bill.source && (
+                                  <p className="text-sm text-gray-500">
+                                    {bill.source}
+                                  </p>
+                                )}
+                              </div>
                             </div>
                             <div className="text-right">
-                              <p className="text-lg font-semibold text-gray-900">
+                              <p
+                                className={`text-lg font-semibold ${
+                                  bill.isPaid
+                                    ? 'text-gray-400 line-through'
+                                    : 'text-gray-900'
+                                }`}
+                              >
                                 {formatCurrency(bill.amount)}
                               </p>
                             </div>
@@ -880,33 +1075,60 @@ export function UpcomingBills() {
                             <div className="space-y-2">
                               {dayBills.map((bill, index) => (
                                 <div
-                                  key={`${bill.type}-${bill.name}-${index}`}
-                                  className="flex items-center justify-between py-2 pl-2 border-l-2 border-gray-100"
+                                  key={`${bill.type}-${bill.id}-${index}`}
+                                  className={`flex items-center justify-between py-2 pl-2 border-l-2 border-gray-100 ${
+                                    bill.isPaid ? 'opacity-60' : ''
+                                  }`}
                                 >
-                                  <div className="flex-1">
-                                    <div className="flex items-center gap-2">
-                                      <h4 className="text-sm font-medium text-gray-900">
-                                        {bill.name}
-                                      </h4>
-                                      <span
-                                        className={`px-2 py-0.5 text-xs font-medium rounded ${
-                                          bill.type === 'expense'
-                                            ? 'bg-green-100 text-green-800'
-                                            : getCategoryColor(bill.category)
-                                        }`}
-                                      >
-                                        {bill.type === 'expense'
-                                          ? 'Recurring Expense'
-                                          : getCategoryLabel(bill.category)}
-                                      </span>
-                                    </div>
-                                    {bill.source && (
-                                      <p className="text-xs text-gray-500 mt-0.5">
-                                        {bill.source}
-                                      </p>
+                                  <div className="flex items-center gap-3 flex-1">
+                                    {bill.type === 'liability' && (
+                                      <input
+                                        type="checkbox"
+                                        checked={bill.isPaid}
+                                        disabled={bill.isPaid}
+                                        onChange={() =>
+                                          handleTogglePaid(bill, year, month)
+                                        }
+                                        className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                                      />
                                     )}
+                                    <div className="flex-1">
+                                      <div className="flex items-center gap-2">
+                                        <h4
+                                          className={`text-sm font-medium ${
+                                            bill.isPaid
+                                              ? 'text-gray-500 line-through'
+                                              : 'text-gray-900'
+                                          }`}
+                                        >
+                                          {bill.name}
+                                        </h4>
+                                        <span
+                                          className={`px-2 py-0.5 text-xs font-medium rounded ${
+                                            bill.type === 'expense'
+                                              ? 'bg-green-100 text-green-800'
+                                              : getCategoryColor(bill.category)
+                                          }`}
+                                        >
+                                          {bill.type === 'expense'
+                                            ? 'Recurring Expense'
+                                            : getCategoryLabel(bill.category)}
+                                        </span>
+                                      </div>
+                                      {bill.source && (
+                                        <p className="text-xs text-gray-500 mt-0.5">
+                                          {bill.source}
+                                        </p>
+                                      )}
+                                    </div>
                                   </div>
-                                  <p className="text-sm font-semibold text-gray-900">
+                                  <p
+                                    className={`text-sm font-semibold ${
+                                      bill.isPaid
+                                        ? 'text-gray-400 line-through'
+                                        : 'text-gray-900'
+                                    }`}
+                                  >
                                     {formatCurrency(bill.amount)}
                                   </p>
                                 </div>
@@ -931,6 +1153,102 @@ export function UpcomingBills() {
           )}
         </div>
       )}
+
+      {/* Confirmation Modal */}
+      <Modal
+        isOpen={pendingBill !== null}
+        onClose={handleCancelPaid}
+        title="Mark Bill as Paid"
+      >
+        {pendingBill && (
+          <div className="space-y-4">
+            <div className="bg-yellow-50 border border-yellow-200 rounded-md p-4">
+              <div className="flex">
+                <div className="flex-shrink-0">
+                  <svg
+                    className="h-5 w-5 text-yellow-400"
+                    viewBox="0 0 20 20"
+                    fill="currentColor"
+                  >
+                    <path
+                      fillRule="evenodd"
+                      d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z"
+                      clipRule="evenodd"
+                    />
+                  </svg>
+                </div>
+                <div className="ml-3">
+                  <h3 className="text-sm font-medium text-yellow-800">
+                    Confirm Payment
+                  </h3>
+                  <div className="mt-2 text-sm text-yellow-700">
+                    <p>
+                      Are you sure you want to mark this bill as paid? This will
+                      create an expense record with today's date.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-gray-50 rounded-md p-4">
+              <dl className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <dt className="text-sm font-medium text-gray-500">
+                    Bill Name
+                  </dt>
+                  <dd className="mt-1 text-sm text-gray-900">
+                    {pendingBill.bill.name}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-sm font-medium text-gray-500">Amount</dt>
+                  <dd className="mt-1 text-sm text-gray-900">
+                    {formatCurrency(pendingBill.bill.amount)}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-sm font-medium text-gray-500">
+                    Due Month
+                  </dt>
+                  <dd className="mt-1 text-sm text-gray-900">
+                    {monthNames[pendingBill.month]} {pendingBill.year}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-sm font-medium text-gray-500">
+                    Payment Date
+                  </dt>
+                  <dd className="mt-1 text-sm text-gray-900">
+                    {new Date().toLocaleDateString('en-US', {
+                      year: 'numeric',
+                      month: 'long',
+                      day: 'numeric',
+                    })}
+                  </dd>
+                </div>
+              </dl>
+            </div>
+
+            <div className="flex justify-end gap-3 pt-4">
+              <button
+                type="button"
+                onClick={handleCancelPaid}
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmPaid}
+                className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 border border-transparent rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+              >
+                Confirm Payment
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }

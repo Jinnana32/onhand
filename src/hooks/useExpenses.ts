@@ -12,6 +12,7 @@ interface CreateExpenseInput {
   frequency?: 'one_time' | 'monthly' | 'weekly'
   due_date?: number | null
   start_date?: string | null
+  liability_id?: string | null // Link to liability when marking as paid
   is_active?: boolean
 }
 

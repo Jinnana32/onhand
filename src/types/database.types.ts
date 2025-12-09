@@ -62,6 +62,7 @@ export interface Expense {
   frequency: 'one_time' | 'monthly' | 'weekly'
   due_date: number | null // Day of month (1-31) for recurring expenses
   start_date: string | null // Date when recurring expense starts
+  liability_id: string | null // Reference to liabilities table (when expense is a payment for a liability)
   is_active: boolean
   created_at: string
   updated_at: string
