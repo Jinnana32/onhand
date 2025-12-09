@@ -1,5 +1,10 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
-import { useLiabilities, useExpenses, useIncomeSources } from '../hooks';
+import {
+  useLiabilities,
+  useExpenses,
+  useIncomeSources,
+  useProfile,
+} from '../hooks';
 import { formatCurrency } from '../lib/utils';
 import { Modal } from '../components/Modal';
 
@@ -25,8 +30,12 @@ export function CashFlow() {
     updateIncomeSourceAsync,
     createIncomeSourceAsync,
   } = useIncomeSources();
+  const { profile, isLoading: isLoadingProfile } = useProfile();
   const isLoading =
-    isLoadingLiabilities || isLoadingExpenses || isLoadingIncome;
+    isLoadingLiabilities ||
+    isLoadingExpenses ||
+    isLoadingIncome ||
+    isLoadingProfile;
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [viewMode, setViewMode] = useState<ViewMode>('calendar');
@@ -1451,7 +1460,7 @@ export function CashFlow() {
 
           {/* Summary Card */}
           <div className="bg-white p-6 rounded-lg shadow">
-            <div className="grid grid-cols-2 gap-6">
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-6">
               {/* Total Bills */}
               <div>
                 <p className="text-sm font-medium text-gray-600">Total Bills</p>
@@ -1468,23 +1477,16 @@ export function CashFlow() {
                 <p className="text-2xl font-bold text-green-600 mt-1">
                   {formatCurrency(totalIncome)}
                 </p>
+                <p className="text-xs text-gray-500 mt-1">
+                  Expected Remaining Cash{' '}
+                  {formatCurrency(expectedRemainingCash)}
+                </p>
               </div>
 
-              {/* Remaining Bills */}
+              {/* Remaining Funds */}
               <div>
                 <p className="text-sm font-medium text-gray-600">
-                  Remaining Bills
-                </p>
-                <p className="text-2xl font-bold text-orange-600 mt-1">
-                  {formatCurrency(remainingBills)}
-                </p>
-                <p className="text-xs text-gray-500 mt-1">Unpaid liabilities</p>
-              </div>
-
-              {/* Remaining Money */}
-              <div>
-                <p className="text-sm font-medium text-gray-600">
-                  Cash on hand
+                  Remaining Funds for the month
                 </p>
                 <p
                   className={`text-2xl font-bold mt-1 ${
@@ -1494,11 +1496,29 @@ export function CashFlow() {
                   {formatCurrency(remainingMoney)}
                 </p>
                 <p className="text-xs text-gray-500 mt-1">
-                  Income received - Expenses
+                  Total bills - Received income
                 </p>
-                <p className="text-xs text-gray-400 mt-2">
-                  Expected remaining cash:{' '}
-                  {formatCurrency(expectedRemainingCash)}
+              </div>
+
+              {/* Remaining Bills */}
+              <div>
+                <p className="text-sm font-medium text-gray-600">Upaid Bills</p>
+                <p className="text-2xl font-bold text-orange-600 mt-1">
+                  {formatCurrency(remainingBills)}
+                </p>
+                <p className="text-xs text-gray-500 mt-1">Unpaid liabilities</p>
+              </div>
+
+              {/* Overall Funds */}
+              <div>
+                <p className="text-sm font-medium text-gray-600">
+                  Overall Funds
+                </p>
+                <p className="text-2xl font-bold text-blue-600 mt-1">
+                  {formatCurrency(profile?.current_cash || 0)}
+                </p>
+                <p className="text-xs text-gray-500 mt-1">
+                  Current cash on hand
                 </p>
               </div>
             </div>
