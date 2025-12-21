@@ -1,8 +1,28 @@
 import { useState } from 'react'
+import { 
+  Table, 
+  Button, 
+  Modal, 
+  Form, 
+  Input, 
+  InputNumber, 
+  Typography, 
+  Space, 
+  Tag, 
+  Popconfirm,
+  message,
+  Empty,
+  Card,
+  Skeleton,
+  Progress,
+  Switch
+} from 'antd'
+import { PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons'
 import { useCreditCards } from '../hooks/useCreditCards'
 import { CreditCard } from '../types/database.types'
 import { formatCurrency } from '../lib/utils'
-import { Modal } from '../components/Modal'
+
+const { Title, Text } = Typography
 
 export function CreditCards() {
   const {
@@ -15,37 +35,24 @@ export function CreditCards() {
     isUpdating,
   } = useCreditCards()
 
+  const [form] = Form.useForm()
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [editingCard, setEditingCard] = useState<CreditCard | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
 
-  const [formData, setFormData] = useState({
-    name: '',
-    bank: '',
-    credit_limit: '',
-    current_balance: '',
-    due_date: '',
-  })
-
   const handleOpenModal = (card?: CreditCard) => {
     if (card) {
       setEditingCard(card)
-      setFormData({
+      form.setFieldsValue({
         name: card.name,
         bank: card.bank,
-        credit_limit: card.credit_limit.toString(),
-        current_balance: card.current_balance.toString(),
-        due_date: card.due_date.toString(),
+        credit_limit: card.credit_limit,
+        current_balance: card.current_balance,
+        due_date: card.due_date,
       })
     } else {
       setEditingCard(null)
-      setFormData({
-        name: '',
-        bank: '',
-        credit_limit: '',
-        current_balance: '',
-        due_date: '',
-      })
+      form.resetFields()
     }
     setIsModalOpen(true)
   }
@@ -53,79 +60,78 @@ export function CreditCards() {
   const handleCloseModal = () => {
     setIsModalOpen(false)
     setEditingCard(null)
-    setFormData({
-      name: '',
-      bank: '',
-      credit_limit: '',
-      current_balance: '',
-      due_date: '',
-    })
+    form.resetFields()
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    const creditLimit = parseFloat(formData.credit_limit)
-    const currentBalance = parseFloat(formData.current_balance) || 0
-    const dueDate = parseInt(formData.due_date)
+  const handleSubmit = async () => {
+    try {
+      const values = await form.validateFields()
+      const creditLimit = values.credit_limit
+      const currentBalance = values.current_balance || 0
+      const dueDate = values.due_date
 
-    if (isNaN(creditLimit) || creditLimit <= 0) {
-      alert('Please enter a valid credit limit')
-      return
-    }
+      if (isNaN(creditLimit) || creditLimit <= 0) {
+        message.error('Please enter a valid credit limit')
+        return
+      }
 
-    if (isNaN(dueDate) || dueDate < 1 || dueDate > 31) {
-      alert('Please enter a valid due date (1-31)')
-      return
-    }
+      if (isNaN(dueDate) || dueDate < 1 || dueDate > 31) {
+        message.error('Please enter a valid due date (1-31)')
+        return
+      }
 
-    const input = {
-      name: formData.name,
-      bank: formData.bank,
-      credit_limit: creditLimit,
-      current_balance: currentBalance,
-      due_date: dueDate,
-    }
+      const input = {
+        name: values.name,
+        bank: values.bank,
+        credit_limit: creditLimit,
+        current_balance: currentBalance,
+        due_date: dueDate,
+      }
 
-    if (editingCard) {
-      updateCreditCard(
-        {
-          id: editingCard.id,
-          updates: input,
-        },
-        {
+      if (editingCard) {
+        updateCreditCard(
+          {
+            id: editingCard.id,
+            updates: input,
+          },
+          {
+            onSuccess: () => {
+              message.success('Credit card updated successfully')
+              handleCloseModal()
+            },
+            onError: (error: Error) => {
+              message.error('Error updating credit card: ' + (error instanceof Error ? error.message : 'Unknown error'))
+            },
+          }
+        )
+      } else {
+        createCreditCard(input, {
           onSuccess: () => {
+            message.success('Credit card created successfully')
             handleCloseModal()
           },
           onError: (error: Error) => {
-            alert('Error updating credit card: ' + (error instanceof Error ? error.message : 'Unknown error'))
+            message.error('Error creating credit card: ' + (error instanceof Error ? error.message : 'Unknown error'))
           },
-        }
-      )
-    } else {
-      createCreditCard(input, {
-        onSuccess: () => {
-          handleCloseModal()
-        },
-        onError: (error: Error) => {
-          alert('Error creating credit card: ' + (error instanceof Error ? error.message : 'Unknown error'))
-        },
-      })
+        })
+      }
+    } catch (error) {
+      // Form validation errors are handled by Ant Design
     }
   }
 
   const handleDelete = (id: string) => {
-    if (window.confirm('Are you sure you want to delete this credit card? This will also unlink any liabilities associated with it.')) {
-      setDeletingId(id)
-      deleteCreditCard(id, {
-        onSuccess: () => {
-          setDeletingId(null)
-        },
-        onError: (error: Error) => {
-          alert('Error deleting credit card: ' + (error instanceof Error ? error.message : 'Unknown error'))
-          setDeletingId(null)
-        },
-      })
-    }
+    setDeletingId(id)
+    deleteCreditCard(id, {
+      onSuccess: () => {
+        message.success('Credit card deleted successfully')
+        setDeletingId(null)
+      },
+      onError: (error: Error) => {
+        message.error('Error deleting credit card: ' + (error instanceof Error ? error.message : 'Unknown error'))
+        setDeletingId(null)
+      },
+    })
   }
 
   const handleToggleActive = (card: CreditCard) => {
@@ -135,278 +141,287 @@ export function CreditCards() {
         updates: { is_active: !card.is_active },
       },
       {
+        onSuccess: () => {
+          message.success(`Credit card ${!card.is_active ? 'activated' : 'deactivated'} successfully`)
+        },
         onError: (error: Error) => {
-          alert('Error updating credit card: ' + (error instanceof Error ? error.message : 'Unknown error'))
+          message.error('Error updating credit card: ' + (error instanceof Error ? error.message : 'Unknown error'))
         },
       }
     )
   }
 
+  const columns = [
+    {
+      title: 'Card Name',
+      dataIndex: 'name',
+      key: 'name',
+      render: (_: unknown, card: CreditCard) => (
+        <Text strong={card.is_active} delete={!card.is_active}>
+          {card.name}
+        </Text>
+      ),
+    },
+    {
+      title: 'Bank',
+      key: 'bank',
+      render: (_: unknown, card: CreditCard) => (
+        <Tag color="blue">{card.bank}</Tag>
+      ),
+    },
+    {
+      title: 'Credit Limit',
+      key: 'credit_limit',
+      render: (_: unknown, card: CreditCard) => (
+        <Text>{formatCurrency(card.credit_limit)}</Text>
+      ),
+    },
+    {
+      title: 'Current Balance',
+      key: 'current_balance',
+      render: (_: unknown, card: CreditCard) => (
+        <Text>{formatCurrency(card.current_balance)}</Text>
+      ),
+    },
+    {
+      title: 'Available Credit',
+      key: 'available_credit',
+      render: (_: unknown, card: CreditCard) => {
+        const availableCredit = card.credit_limit - card.current_balance
+        const color =
+          availableCredit < card.credit_limit * 0.1
+            ? '#dc2626'
+            : availableCredit < card.credit_limit * 0.3
+            ? '#ea580c'
+            : '#16a34a'
+        return (
+          <Text strong style={{ color }}>
+            {formatCurrency(availableCredit)}
+          </Text>
+        )
+      },
+    },
+    {
+      title: 'Utilization',
+      key: 'utilization',
+      render: (_: unknown, card: CreditCard) => {
+        const utilization = (card.current_balance / card.credit_limit) * 100
+        const status =
+          utilization > 80 ? 'exception' : utilization > 50 ? 'active' : 'success'
+        return (
+          <Space>
+            <Progress
+              percent={Math.min(utilization, 100)}
+              status={status}
+              showInfo={false}
+              style={{ width: 80 }}
+            />
+            <Text>{utilization.toFixed(1)}%</Text>
+          </Space>
+        )
+      },
+    },
+    {
+      title: 'Due Date',
+      key: 'due_date',
+      render: (_: unknown, card: CreditCard) => (
+        <Text>Day {card.due_date}</Text>
+      ),
+    },
+    {
+      title: 'Status',
+      key: 'status',
+      render: (_: unknown, card: CreditCard) => (
+        <Tag color={card.is_active ? 'success' : 'default'}>
+          {card.is_active ? 'Active' : 'Inactive'}
+        </Tag>
+      ),
+    },
+    {
+      title: 'Actions',
+      key: 'actions',
+      render: (_: unknown, card: CreditCard) => (
+        <Space>
+          <Button
+            type="link"
+            size="small"
+            onClick={() => handleToggleActive(card)}
+          >
+            {card.is_active ? 'Deactivate' : 'Activate'}
+          </Button>
+          <Button
+            type="link"
+            icon={<EditOutlined />}
+            onClick={() => handleOpenModal(card)}
+          >
+            Edit
+          </Button>
+          <Popconfirm
+            title="Delete credit card"
+            description="Are you sure you want to delete this credit card? This will also unlink any liabilities associated with it."
+            onConfirm={() => handleDelete(card.id)}
+            okText="Yes"
+            cancelText="No"
+          >
+            <Button
+              type="link"
+              danger
+              icon={<DeleteOutlined />}
+              loading={deletingId === card.id}
+            >
+              Delete
+            </Button>
+          </Popconfirm>
+        </Space>
+      ),
+    },
+  ]
+
   if (isLoading) {
     return (
       <div>
-        <h2 className="text-2xl font-bold text-gray-900 mb-6">Credit Cards</h2>
-        <div className="animate-pulse">Loading...</div>
+        <Title level={2} style={{ marginBottom: 24 }}>Credit Cards</Title>
+        <Card>
+          <Skeleton active />
+        </Card>
       </div>
     )
   }
 
   return (
     <div>
-      <div className="flex justify-between items-center mb-6">
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24 }}>
         <div>
-          <h2 className="text-2xl font-bold text-gray-900">Credit Cards</h2>
-          <p className="text-sm text-gray-600 mt-1">
+          <Title level={2} style={{ margin: 0 }}>Credit Cards</Title>
+          <Text type="secondary" style={{ fontSize: '14px' }}>
             Manage your credit card accounts. Link them to liabilities to track monthly bills.
-          </p>
+          </Text>
         </div>
-        <button
+        <Button
+          type="primary"
+          icon={<PlusOutlined />}
           onClick={() => handleOpenModal()}
-          className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+          size="large"
         >
-          + Add Credit Card
-        </button>
+          Add Credit Card
+        </Button>
       </div>
 
       {creditCards.length === 0 ? (
-        <div className="bg-white rounded-lg shadow p-12 text-center">
-          <p className="text-gray-500 mb-4">No credit cards registered yet.</p>
-          <button
-            onClick={() => handleOpenModal()}
-            className="text-indigo-600 hover:text-indigo-700 font-medium"
-          >
-            Add your first credit card
-          </button>
-        </div>
+        <Card>
+          <Empty
+            description={
+              <div>
+                <p>No credit cards registered yet.</p>
+                <Button
+                  type="link"
+                  onClick={() => handleOpenModal()}
+                  style={{ marginTop: 8 }}
+                >
+                  Add your first credit card
+                </Button>
+              </div>
+            }
+          />
+        </Card>
       ) : (
-        <div className="bg-white rounded-lg shadow overflow-hidden">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Card Name
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Bank
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Credit Limit
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Current Balance
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Available Credit
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Utilization
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Due Date
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Status
-                </th>
-                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Actions
-                </th>
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {creditCards.map((card) => {
-                const availableCredit = card.credit_limit - card.current_balance
-                const utilization = (card.current_balance / card.credit_limit) * 100
-                return (
-                  <tr key={card.id} className={!card.is_active ? 'opacity-50' : ''}>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm font-medium text-gray-900">{card.name}</div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className="px-2 py-1 text-xs font-medium bg-indigo-100 text-indigo-800 rounded">
-                        {card.bank}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-900">{formatCurrency(card.credit_limit)}</div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-900">{formatCurrency(card.current_balance)}</div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className={`text-sm font-medium ${
-                        availableCredit < card.credit_limit * 0.1 
-                          ? 'text-red-600' 
-                          : availableCredit < card.credit_limit * 0.3
-                          ? 'text-orange-600'
-                          : 'text-green-600'
-                      }`}>
-                        {formatCurrency(availableCredit)}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex items-center">
-                        <div className="w-16 bg-gray-200 rounded-full h-2 mr-2">
-                          <div
-                            className={`h-2 rounded-full ${
-                              utilization > 80
-                                ? 'bg-red-600'
-                                : utilization > 50
-                                ? 'bg-orange-600'
-                                : 'bg-green-600'
-                            }`}
-                            style={{ width: `${Math.min(utilization, 100)}%` }}
-                          ></div>
-                        </div>
-                        <span className="text-sm text-gray-600">{utilization.toFixed(1)}%</span>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-900">Day {card.due_date}</div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <button
-                        onClick={() => handleToggleActive(card)}
-                        className={`px-2 py-1 text-xs font-medium rounded ${
-                          card.is_active
-                            ? 'bg-green-100 text-green-800'
-                            : 'bg-gray-100 text-gray-800'
-                        }`}
-                      >
-                        {card.is_active ? 'Active' : 'Inactive'}
-                      </button>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                      <button
-                        onClick={() => handleOpenModal(card)}
-                        className="text-indigo-600 hover:text-indigo-900 mr-4"
-                      >
-                        Edit
-                      </button>
-                      <button
-                        onClick={() => handleDelete(card.id)}
-                        disabled={deletingId === card.id}
-                        className="text-red-600 hover:text-red-900 disabled:opacity-50"
-                      >
-                        {deletingId === card.id ? 'Deleting...' : 'Delete'}
-                      </button>
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
+        <Card>
+          <Table
+            columns={columns}
+            dataSource={creditCards}
+            rowKey="id"
+            pagination={{
+              pageSize: 10,
+              showSizeChanger: true,
+              showTotal: (total) => `Total ${total} credit cards`,
+            }}
+            scroll={{ x: 'max-content' }}
+            rowClassName={(record) => (!record.is_active ? 'ant-table-row-disabled' : '')}
+          />
+        </Card>
       )}
 
       <Modal
-        isOpen={isModalOpen}
-        onClose={handleCloseModal}
         title={editingCard ? 'Edit Credit Card' : 'Add Credit Card'}
+        open={isModalOpen}
+        onCancel={handleCloseModal}
+        onOk={handleSubmit}
+        confirmLoading={isCreating || isUpdating}
+        okText={editingCard ? 'Update' : 'Create'}
+        cancelText="Cancel"
+        width={600}
       >
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label htmlFor="name" className="block text-sm font-medium text-gray-700">
-              Card Name
-            </label>
-            <input
-              type="text"
-              id="name"
-              required
-              value={formData.name}
-              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-              className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
-              placeholder="e.g., BPI Gold, RCBC Visa"
-            />
-          </div>
+        <Form
+          form={form}
+          layout="vertical"
+          onFinish={handleSubmit}
+        >
+          <Form.Item
+            name="name"
+            label="Card Name"
+            rules={[{ required: true, message: 'Please enter a card name' }]}
+          >
+            <Input placeholder="e.g., BPI Gold, RCBC Visa" />
+          </Form.Item>
 
-          <div>
-            <label htmlFor="bank" className="block text-sm font-medium text-gray-700">
-              Bank
-            </label>
-            <input
-              type="text"
-              id="bank"
-              required
-              value={formData.bank}
-              onChange={(e) => setFormData({ ...formData, bank: e.target.value })}
-              className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
-              placeholder="e.g., BPI, RCBC, BDO"
-            />
-          </div>
+          <Form.Item
+            name="bank"
+            label="Bank"
+            rules={[{ required: true, message: 'Please enter a bank name' }]}
+          >
+            <Input placeholder="e.g., BPI, RCBC, BDO" />
+          </Form.Item>
 
-          <div>
-            <label htmlFor="credit_limit" className="block text-sm font-medium text-gray-700">
-              Credit Limit (₱)
-            </label>
-            <input
-              type="number"
-              id="credit_limit"
-              required
-              step="0.01"
-              min="0"
-              value={formData.credit_limit}
-              onChange={(e) => setFormData({ ...formData, credit_limit: e.target.value })}
-              className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+          <Form.Item
+            name="credit_limit"
+            label="Credit Limit (₱)"
+            rules={[
+              { required: true, message: 'Please enter a credit limit' },
+              { type: 'number', min: 0.01, message: 'Credit limit must be greater than 0' },
+            ]}
+          >
+            <InputNumber
+              style={{ width: '100%' }}
+              prefix="₱"
+              step={0.01}
+              min={0}
               placeholder="0.00"
             />
-          </div>
+          </Form.Item>
 
-          <div>
-            <label htmlFor="current_balance" className="block text-sm font-medium text-gray-700">
-              Current Balance (₱)
-            </label>
-            <input
-              type="number"
-              id="current_balance"
-              step="0.01"
-              min="0"
-              value={formData.current_balance}
-              onChange={(e) => setFormData({ ...formData, current_balance: e.target.value })}
-              className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+          <Form.Item
+            name="current_balance"
+            label="Current Balance (₱)"
+            rules={[
+              { type: 'number', min: 0, message: 'Balance cannot be negative' },
+            ]}
+          >
+            <InputNumber
+              style={{ width: '100%' }}
+              prefix="₱"
+              step={0.01}
+              min={0}
               placeholder="0.00"
             />
-          </div>
+          </Form.Item>
 
-          <div>
-            <label htmlFor="due_date" className="block text-sm font-medium text-gray-700">
-              Due Date (Day of Month, 1-31)
-            </label>
-            <input
-              type="number"
-              id="due_date"
-              required
-              min="1"
-              max="31"
-              value={formData.due_date}
-              onChange={(e) => setFormData({ ...formData, due_date: e.target.value })}
-              className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+          <Form.Item
+            name="due_date"
+            label="Due Date (Day of Month, 1-31)"
+            rules={[
+              { required: true, message: 'Please enter a due date' },
+              { type: 'number', min: 1, max: 31, message: 'Due date must be between 1 and 31' },
+            ]}
+          >
+            <InputNumber
+              style={{ width: '100%' }}
+              min={1}
+              max={31}
               placeholder="15"
             />
-          </div>
-
-          <div className="flex justify-end gap-3 pt-4">
-            <button
-              type="button"
-              onClick={handleCloseModal}
-              className="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={isCreating || isUpdating}
-              className="px-4 py-2 bg-indigo-600 text-white rounded-md text-sm font-medium hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50"
-            >
-              {isCreating || isUpdating
-                ? 'Saving...'
-                : editingCard
-                ? 'Update'
-                : 'Create'}
-            </button>
-          </div>
-        </form>
+          </Form.Item>
+        </Form>
       </Modal>
     </div>
   )
 }
-

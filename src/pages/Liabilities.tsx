@@ -1,8 +1,33 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo } from 'react';
+import {
+  Table,
+  Button,
+  Modal,
+  Form,
+  Input,
+  InputNumber,
+  Select,
+  DatePicker,
+  Typography,
+  Space,
+  Tag,
+  Popconfirm,
+  message,
+  Empty,
+  Card,
+  Skeleton,
+  Row,
+  Col,
+  Alert,
+} from 'antd';
+import { PlusOutlined, EditOutlined, DeleteOutlined, SearchOutlined } from '@ant-design/icons';
+import dayjs, { Dayjs } from 'dayjs';
 import { useLiabilities, useCreditCards } from '../hooks';
 import { Liability } from '../types/database.types';
 import { formatCurrency } from '../lib/utils';
-import { Modal } from '../components/Modal';
+
+const { Title, Text } = Typography;
+const { Option } = Select;
 
 export function Liabilities() {
   const {
@@ -17,6 +42,7 @@ export function Liabilities() {
 
   const { creditCards } = useCreditCards();
 
+  const [form] = Form.useForm();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingLiability, setEditingLiability] = useState<Liability | null>(
     null
@@ -32,57 +58,33 @@ export function Liabilities() {
     'all' | 'active' | 'inactive'
   >('all');
 
-  // Pagination states
-  const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState(10);
-
-  const [formData, setFormData] = useState({
-    name: '',
-    amount: '',
-    due_date: '',
-    category: 'credit_card' as Liability['category'],
-    payment_type: 'straight' as 'straight' | 'installment' | null,
-    source: '',
-    credit_card_id: '',
-    credit_limit: '',
-    current_balance: '',
-    months_to_pay: '',
-    start_date: new Date().toISOString().split('T')[0],
-  });
-
   const handleOpenModal = (liability?: Liability) => {
     if (liability) {
       setEditingLiability(liability);
-      setFormData({
+      form.setFieldsValue({
         name: liability.name,
-        amount: liability.amount.toString(),
-        due_date: liability.due_date.toString(),
+        amount: liability.amount,
+        due_date: liability.due_date,
         category: liability.category,
         payment_type:
           liability.payment_type ||
           (liability.category === 'loan' ? 'installment' : 'straight'),
         source: liability.source || '',
-        credit_card_id: liability.credit_card_id || '',
-        credit_limit: liability.credit_limit?.toString() || '',
-        current_balance: liability.current_balance?.toString() || '',
-        months_to_pay: liability.months_to_pay?.toString() || '',
-        start_date:
-          liability.start_date || new Date().toISOString().split('T')[0],
+        credit_card_id: liability.credit_card_id || undefined,
+        credit_limit: liability.credit_limit || undefined,
+        current_balance: liability.current_balance || undefined,
+        months_to_pay: liability.months_to_pay || undefined,
+        start_date: liability.start_date
+          ? dayjs(liability.start_date)
+          : dayjs(),
       });
     } else {
       setEditingLiability(null);
-      setFormData({
-        name: '',
-        amount: '',
-        due_date: '',
+      form.resetFields();
+      form.setFieldsValue({
         category: 'credit_card',
         payment_type: 'straight',
-        source: '',
-        credit_card_id: '',
-        credit_limit: '',
-        current_balance: '',
-        months_to_pay: '',
-        start_date: new Date().toISOString().split('T')[0],
+        start_date: dayjs(),
       });
     }
     setIsModalOpen(true);
@@ -91,43 +93,30 @@ export function Liabilities() {
   const handleCloseModal = () => {
     setIsModalOpen(false);
     setEditingLiability(null);
-    setFormData({
-      name: '',
-      amount: '',
-      due_date: '',
-      category: 'credit_card',
-      payment_type: 'straight',
-      source: '',
-      credit_card_id: '',
-      credit_limit: '',
-      current_balance: '',
-      months_to_pay: '',
-      start_date: new Date().toISOString().split('T')[0],
-    });
+    form.resetFields();
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    const amount = parseFloat(formData.amount);
-    const dueDate = parseInt(formData.due_date);
+  const handleSubmit = async () => {
+    try {
+      const values = await form.validateFields();
+      const amount = values.amount;
+      const dueDate = values.due_date;
     // Only set current_balance for credit cards, loans, and credit card installments
     const needsCurrentBalance =
-      formData.category === 'credit_card' || formData.category === 'loan';
+        values.category === 'credit_card' || values.category === 'loan';
     const currentBalance =
-      needsCurrentBalance && formData.current_balance
-        ? parseFloat(formData.current_balance)
+        needsCurrentBalance && values.current_balance
+          ? values.current_balance
         : null;
-    const creditLimit = formData.credit_limit
-      ? parseFloat(formData.credit_limit)
-      : null;
+      const creditLimit = values.credit_limit || null;
 
     if (isNaN(amount) || amount <= 0) {
-      alert('Please enter a valid amount');
+        message.error('Please enter a valid amount');
       return;
     }
 
     if (isNaN(dueDate) || dueDate < 1 || dueDate > 31) {
-      alert('Please enter a valid due date (1-31)');
+        message.error('Please enter a valid due date (1-31)');
       return;
     }
 
@@ -135,58 +124,43 @@ export function Liabilities() {
     let paymentType: 'straight' | 'installment' | null = null;
     let monthsToPay: number | null = null;
 
-    if (formData.category === 'credit_card') {
+      if (values.category === 'credit_card') {
       // Credit card: use selected payment_type
-      paymentType = formData.payment_type || 'straight';
+        paymentType = values.payment_type || 'straight';
       // Straight payment = months_to_pay = 1, Installment = user specified
       if (paymentType === 'straight') {
         monthsToPay = 1;
       } else {
         // Installment: user must specify months_to_pay
-        monthsToPay = formData.months_to_pay
-          ? parseInt(formData.months_to_pay)
-          : null;
-        if (
-          !formData.months_to_pay ||
-          isNaN(parseInt(formData.months_to_pay)) ||
-          parseInt(formData.months_to_pay) < 1
-        ) {
-          alert(
+          monthsToPay = values.months_to_pay || null;
+          if (!values.months_to_pay || values.months_to_pay < 1) {
+            message.error(
             'Please enter a valid number of months for installment payment (1 or more)'
           );
           return;
         }
       }
-    } else if (formData.category === 'loan') {
+      } else if (values.category === 'loan') {
       // Loan: always installment
       paymentType = 'installment';
-      monthsToPay = formData.months_to_pay
-        ? parseInt(formData.months_to_pay)
-        : null;
-      if (
-        !formData.months_to_pay ||
-        isNaN(parseInt(formData.months_to_pay)) ||
-        parseInt(formData.months_to_pay) < 1
-      ) {
-        alert('Please enter a valid number of months for the loan (1 or more)');
+        monthsToPay = values.months_to_pay || null;
+        if (!values.months_to_pay || values.months_to_pay < 1) {
+          message.error('Please enter a valid number of months for the loan (1 or more)');
         return;
       }
-    } else if (formData.category === 'recurring_bill') {
+      } else if (values.category === 'recurring_bill') {
       // Recurring bill: always straight, no months_to_pay (recurring forever)
       paymentType = 'straight';
       monthsToPay = null;
     } else {
       // Other: default to straight
       paymentType = 'straight';
-      monthsToPay = formData.months_to_pay
-        ? parseInt(formData.months_to_pay)
-        : null;
+        monthsToPay = values.months_to_pay || null;
       if (
-        formData.months_to_pay &&
-        (isNaN(parseInt(formData.months_to_pay)) ||
-          parseInt(formData.months_to_pay) < 1)
+          values.months_to_pay &&
+          (isNaN(values.months_to_pay) || values.months_to_pay < 1)
       ) {
-        alert(
+          message.error(
           'Please enter a valid number of months (1 or more), or leave empty for recurring forever'
         );
         return;
@@ -194,17 +168,19 @@ export function Liabilities() {
     }
 
     const input = {
-      name: formData.name,
+        name: values.name,
       amount,
       due_date: dueDate,
-      category: formData.category,
+        category: values.category,
       payment_type: paymentType,
-      source: formData.source || null,
-      credit_card_id: formData.credit_card_id || null,
+        source: values.source || null,
+        credit_card_id: values.credit_card_id || null,
       credit_limit: creditLimit,
       current_balance: currentBalance,
       months_to_pay: monthsToPay,
-      start_date: formData.start_date || null,
+        start_date: values.start_date
+          ? (values.start_date as Dayjs).format('YYYY-MM-DD')
+          : null,
     };
 
     if (editingLiability) {
@@ -215,10 +191,11 @@ export function Liabilities() {
         },
         {
           onSuccess: () => {
+              message.success('Liability updated successfully');
             handleCloseModal();
           },
           onError: (error: Error) => {
-            alert(
+              message.error(
               'Error updating liability: ' +
                 (error instanceof Error ? error.message : 'Unknown error')
             );
@@ -228,34 +205,37 @@ export function Liabilities() {
     } else {
       createLiability(input, {
         onSuccess: () => {
+            message.success('Liability created successfully');
           handleCloseModal();
         },
         onError: (error: Error) => {
-          alert(
+            message.error(
             'Error creating liability: ' +
               (error instanceof Error ? error.message : 'Unknown error')
           );
         },
       });
+      }
+    } catch (error) {
+      // Form validation errors are handled by Ant Design
     }
   };
 
   const handleDelete = (id: string) => {
-    if (window.confirm('Are you sure you want to delete this liability?')) {
       setDeletingId(id);
       deleteLiability(id, {
         onSuccess: () => {
+        message.success('Liability deleted successfully');
           setDeletingId(null);
         },
         onError: (error: Error) => {
-          alert(
+        message.error(
             'Error deleting liability: ' +
               (error instanceof Error ? error.message : 'Unknown error')
           );
           setDeletingId(null);
         },
       });
-    }
   };
 
   const handleToggleActive = (liability: Liability) => {
@@ -265,8 +245,13 @@ export function Liabilities() {
         updates: { is_active: !liability.is_active },
       },
       {
+        onSuccess: () => {
+          message.success(
+            `Liability ${!liability.is_active ? 'activated' : 'deactivated'} successfully`
+          );
+        },
         onError: (error: Error) => {
-          alert(
+          message.error(
             'Error updating liability: ' +
               (error instanceof Error ? error.message : 'Unknown error')
           );
@@ -311,487 +296,396 @@ export function Liabilities() {
     });
   }, [liabilities, searchQuery, selectedCategory, statusFilter]);
 
-  // Pagination calculations
-  const totalPages = Math.ceil(filteredLiabilities.length / itemsPerPage);
-  const startIndex = (currentPage - 1) * itemsPerPage;
-  const endIndex = startIndex + itemsPerPage;
-  const paginatedLiabilities = filteredLiabilities.slice(startIndex, endIndex);
-
-  // Reset to page 1 when filters change
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [searchQuery, selectedCategory, statusFilter]);
-
   if (isLoading) {
     return (
       <div>
-        <h2 className="text-2xl font-bold text-gray-900 mb-6">Liabilities</h2>
-        <div className="animate-pulse">Loading...</div>
+        <Title level={2} style={{ marginBottom: 24 }}>Liabilities</Title>
+        <Card>
+          <Skeleton active />
+        </Card>
       </div>
     );
   }
 
+  const columns = [
+    {
+      title: 'Name',
+      dataIndex: 'name',
+      key: 'name',
+      render: (_: unknown, liability: Liability) => (
+        <Text strong={liability.is_active} delete={!liability.is_active}>
+          {liability.name}
+        </Text>
+      ),
+    },
+    {
+      title: 'Source',
+      key: 'source',
+      render: (_: unknown, liability: Liability) =>
+        liability.source ? (
+          <Tag>{liability.source}</Tag>
+        ) : (
+          <Text type="secondary">—</Text>
+        ),
+    },
+    {
+      title: 'Amount',
+      key: 'amount',
+      render: (_: unknown, liability: Liability) => (
+        <Text>{formatCurrency(liability.amount)}</Text>
+      ),
+    },
+    {
+      title: 'Due Date',
+      key: 'due_date',
+      render: (_: unknown, liability: Liability) => (
+        <Text>Day {liability.due_date}</Text>
+      ),
+    },
+    {
+      title: 'Category',
+      key: 'category',
+      render: (_: unknown, liability: Liability) => (
+        <Tag color="purple">
+          {liability.category.replace('_', ' ')}
+        </Tag>
+      ),
+    },
+    {
+      title: 'Payment Type',
+      key: 'payment_type',
+      render: (_: unknown, liability: Liability) => {
+        if (!liability.payment_type) {
+          return <Text type="secondary">—</Text>;
+        }
+        return (
+          <Tag
+            color={
+              liability.payment_type === 'installment' ? 'orange' : 'green'
+            }
+          >
+            {liability.payment_type === 'installment'
+              ? `Installment${
+                  liability.months_to_pay
+                    ? ` (${liability.months_to_pay} months)`
+                    : ''
+                }`
+              : 'Straight'}
+          </Tag>
+        );
+      },
+    },
+    {
+      title: 'Balance / Limit',
+      key: 'balance_limit',
+      render: (_: unknown, liability: Liability) => {
+        if (liability.current_balance !== null) {
   return (
     <div>
-      <div className="flex justify-between items-center mb-6">
-        <h2 className="text-2xl font-bold text-gray-900">Liabilities</h2>
-        <button
+              <Text>{formatCurrency(liability.current_balance)}</Text>
+              {liability.credit_limit && (
+                <Text type="secondary">
+                  {' '}/ {formatCurrency(liability.credit_limit)}
+                </Text>
+              )}
+            </div>
+          );
+        }
+        return <Text type="secondary">—</Text>;
+      },
+    },
+    {
+      title: 'Status',
+      key: 'status',
+      render: (_: unknown, liability: Liability) => (
+        <Tag color={liability.is_active ? 'success' : 'default'}>
+          {liability.is_active ? 'Active' : 'Inactive'}
+        </Tag>
+      ),
+    },
+    {
+      title: 'Actions',
+      key: 'actions',
+      render: (_: unknown, liability: Liability) => (
+        <Space>
+          <Button
+            type="link"
+            size="small"
+            onClick={() => handleToggleActive(liability)}
+          >
+            {liability.is_active ? 'Deactivate' : 'Activate'}
+          </Button>
+          <Button
+            type="link"
+            icon={<EditOutlined />}
+            onClick={() => handleOpenModal(liability)}
+          >
+            Edit
+          </Button>
+          <Popconfirm
+            title="Delete liability"
+            description="Are you sure you want to delete this liability?"
+            onConfirm={() => handleDelete(liability.id)}
+            okText="Yes"
+            cancelText="No"
+          >
+            <Button
+              type="link"
+              danger
+              icon={<DeleteOutlined />}
+              loading={deletingId === liability.id}
+            >
+              Delete
+            </Button>
+          </Popconfirm>
+        </Space>
+      ),
+    },
+  ];
+
+  return (
+    <div>
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginBottom: 24,
+        }}
+      >
+        <Title level={2} style={{ margin: 0 }}>Liabilities</Title>
+        <Button
+          type="primary"
+          icon={<PlusOutlined />}
           onClick={() => handleOpenModal()}
-          className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+          size="large"
         >
-          + Add Liability
-        </button>
+          Add Liability
+        </Button>
       </div>
 
       {/* Search and Filters */}
-      <div className="bg-white rounded-lg shadow p-4 mb-6">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {/* Search */}
+      <Card style={{ marginBottom: 24 }}>
+        <Row gutter={[16, 16]}>
+          <Col xs={24} md={8}>
           <div>
-            <label
-              htmlFor="search"
-              className="block text-sm font-medium text-gray-700 mb-1"
-            >
+              <Text strong style={{ display: 'block', marginBottom: 8 }}>
               Search
-            </label>
-            <div className="relative">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <svg
-                  className="h-5 w-5 text-gray-400"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-                  />
-                </svg>
-              </div>
-              <input
-                type="text"
-                id="search"
+              </Text>
+              <Input
+                prefix={<SearchOutlined />}
+                placeholder="Search by name, source, or category..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md leading-5 bg-white placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-                placeholder="Search by name, source, or category..."
+                allowClear
               />
             </div>
-          </div>
-
-          {/* Category Filter */}
+          </Col>
+          <Col xs={24} md={8}>
           <div>
-            <label
-              htmlFor="category-filter"
-              className="block text-sm font-medium text-gray-700 mb-1"
-            >
+              <Text strong style={{ display: 'block', marginBottom: 8 }}>
               Category
-            </label>
-            <select
-              id="category-filter"
+              </Text>
+              <Select
+                style={{ width: '100%' }}
               value={selectedCategory}
-              onChange={(e) =>
-                setSelectedCategory(
-                  e.target.value as Liability['category'] | 'all'
-                )
-              }
-              className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-            >
-              <option value="all">All Categories</option>
-              <option value="credit_card">Credit Card</option>
-              <option value="loan">Loan</option>
-              <option value="recurring_bill">Recurring Bill</option>
-              <option value="other">Other</option>
-            </select>
+                onChange={(value) =>
+                  setSelectedCategory(value as Liability['category'] | 'all')
+                }
+              >
+                <Option value="all">All Categories</Option>
+                <Option value="credit_card">Credit Card</Option>
+                <Option value="loan">Loan</Option>
+                <Option value="recurring_bill">Recurring Bill</Option>
+                <Option value="other">Other</Option>
+              </Select>
           </div>
-
-          {/* Status Filter */}
+          </Col>
+          <Col xs={24} md={8}>
           <div>
-            <label
-              htmlFor="status-filter"
-              className="block text-sm font-medium text-gray-700 mb-1"
-            >
+              <Text strong style={{ display: 'block', marginBottom: 8 }}>
               Status
-            </label>
-            <select
-              id="status-filter"
+              </Text>
+              <Select
+                style={{ width: '100%' }}
               value={statusFilter}
-              onChange={(e) =>
-                setStatusFilter(e.target.value as 'all' | 'active' | 'inactive')
-              }
-              className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-            >
-              <option value="all">All Status</option>
-              <option value="active">Active</option>
-              <option value="inactive">Inactive</option>
-            </select>
+                onChange={(value) =>
+                  setStatusFilter(value as 'all' | 'active' | 'inactive')
+                }
+              >
+                <Option value="all">All Status</Option>
+                <Option value="active">Active</Option>
+                <Option value="inactive">Inactive</Option>
+              </Select>
           </div>
-        </div>
+          </Col>
+        </Row>
 
         {/* Clear Filters */}
         {(searchQuery ||
           selectedCategory !== 'all' ||
           statusFilter !== 'all') && (
-          <div className="mt-4 flex items-center justify-between">
-            <p className="text-sm text-gray-600">
+          <Alert
+            message={
+              <Space>
+                <Text>
               Showing {filteredLiabilities.length} of {liabilities.length}{' '}
               liabilities
-            </p>
-            <button
+                </Text>
+                <Button
+                  type="link"
+                  size="small"
               onClick={() => {
                 setSearchQuery('');
                 setSelectedCategory('all');
                 setStatusFilter('all');
               }}
-              className="text-sm text-indigo-600 hover:text-indigo-700 font-medium"
             >
               Clear all filters
-            </button>
-          </div>
+                </Button>
+              </Space>
+            }
+            type="info"
+            showIcon
+            style={{ marginTop: 16 }}
+          />
         )}
-      </div>
+      </Card>
 
       {liabilities.length === 0 ? (
-        <div className="bg-white rounded-lg shadow p-12 text-center">
-          <p className="text-gray-500 mb-4">No liabilities yet.</p>
-          <button
+        <Card>
+          <Empty
+            description={
+              <div>
+                <p>No liabilities yet.</p>
+                <Button
+                  type="link"
             onClick={() => handleOpenModal()}
-            className="text-indigo-600 hover:text-indigo-700 font-medium"
+                  style={{ marginTop: 8 }}
           >
             Add your first liability
-          </button>
+                </Button>
         </div>
+            }
+          />
+        </Card>
       ) : filteredLiabilities.length === 0 ? (
-        <div className="bg-white rounded-lg shadow p-12 text-center">
-          <p className="text-gray-500 mb-4">
-            No liabilities match your filters.
-          </p>
-          <button
+        <Card>
+          <Empty
+            description={
+              <div>
+                <p>No liabilities match your filters.</p>
+                <Button
+                  type="link"
             onClick={() => {
               setSearchQuery('');
               setSelectedCategory('all');
               setStatusFilter('all');
             }}
-            className="text-indigo-600 hover:text-indigo-700 font-medium"
+                  style={{ marginTop: 8 }}
           >
             Clear filters
-          </button>
+                </Button>
         </div>
+            }
+          />
+        </Card>
       ) : (
-        <div className="bg-white rounded-lg shadow overflow-hidden">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Name
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Source
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Amount
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Due Date
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Category
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Payment Type
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Balance / Limit
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Status
-                </th>
-                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Actions
-                </th>
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {paginatedLiabilities.map((liability) => (
-                <tr
-                  key={liability.id}
-                  className={!liability.is_active ? 'opacity-50' : ''}
-                >
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm font-medium text-gray-900">
-                      {liability.name}
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    {liability.source ? (
-                      <span className="px-2 py-1 text-xs font-medium bg-gray-100 text-gray-800 rounded">
-                        {liability.source}
-                      </span>
-                    ) : (
-                      <span className="text-sm text-gray-400">—</span>
-                    )}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm text-gray-900">
-                      {formatCurrency(liability.amount)}
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm text-gray-900">
-                      Day {liability.due_date}
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <span className="px-2 py-1 text-xs font-medium bg-purple-100 text-purple-800 rounded">
-                      {liability.category.replace('_', ' ')}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm text-gray-900">
-                      {liability.payment_type ? (
-                        <span
-                          className={`px-2 py-1 text-xs font-medium rounded ${
-                            liability.payment_type === 'installment'
-                              ? 'bg-orange-100 text-orange-800'
-                              : 'bg-green-100 text-green-800'
-                          }`}
-                        >
-                          {liability.payment_type === 'installment'
-                            ? `Installment${
-                                liability.months_to_pay
-                                  ? ` (${liability.months_to_pay} months)`
-                                  : ''
-                              }`
-                            : 'Straight'}
-                        </span>
-                      ) : (
-                        <span className="text-gray-400">—</span>
-                      )}
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm text-gray-900">
-                      {liability.current_balance !== null ? (
-                        <>
-                          {formatCurrency(liability.current_balance)}
-                          {liability.credit_limit && (
-                            <span className="text-gray-500">
-                              {' '}
-                              / {formatCurrency(liability.credit_limit)}
-                            </span>
-                          )}
-                        </>
-                      ) : (
-                        <span className="text-gray-400">—</span>
-                      )}
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <button
-                      onClick={() => handleToggleActive(liability)}
-                      className={`px-2 py-1 text-xs font-medium rounded ${
-                        liability.is_active
-                          ? 'bg-green-100 text-green-800'
-                          : 'bg-gray-100 text-gray-800'
-                      }`}
-                    >
-                      {liability.is_active ? 'Active' : 'Inactive'}
-                    </button>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                    <button
-                      onClick={() => handleOpenModal(liability)}
-                      className="text-indigo-600 hover:text-indigo-900 mr-4"
-                    >
-                      Edit
-                    </button>
-                    <button
-                      onClick={() => handleDelete(liability.id)}
-                      disabled={deletingId === liability.id}
-                      className="text-red-600 hover:text-red-900 disabled:opacity-50"
-                    >
-                      {deletingId === liability.id ? 'Deleting...' : 'Delete'}
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {/* Pagination Controls */}
-      {filteredLiabilities.length > 0 && totalPages > 1 && (
-        <div className="bg-white rounded-lg shadow px-4 py-3 mt-6">
-          <div className="flex items-center justify-between flex-wrap gap-4">
-            <div className="flex items-center gap-4">
-              <div className="flex items-center gap-2">
-                <label
-                  htmlFor="items-per-page"
-                  className="text-sm text-gray-700"
-                >
-                  Items per page:
-                </label>
-                <select
-                  id="items-per-page"
-                  value={itemsPerPage}
-                  onChange={(e) => {
-                    setItemsPerPage(Number(e.target.value));
-                    setCurrentPage(1);
-                  }}
-                  className="px-2 py-1 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
-                >
-                  <option value="5">5</option>
-                  <option value="10">10</option>
-                  <option value="25">25</option>
-                  <option value="50">50</option>
-                  <option value="100">100</option>
-                </select>
-              </div>
-              <p className="text-sm text-gray-600">
-                Showing {startIndex + 1} to{' '}
-                {Math.min(endIndex, filteredLiabilities.length)} of{' '}
-                {filteredLiabilities.length} liabilities
-              </p>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
-                disabled={currentPage === 1}
-                className="px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-              >
-                Previous
-              </button>
-
-              <div className="flex items-center gap-1">
-                {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                  let pageNum: number;
-                  if (totalPages <= 5) {
-                    pageNum = i + 1;
-                  } else if (currentPage <= 3) {
-                    pageNum = i + 1;
-                  } else if (currentPage >= totalPages - 2) {
-                    pageNum = totalPages - 4 + i;
-                  } else {
-                    pageNum = currentPage - 2 + i;
-                  }
-
-                  return (
-                    <button
-                      key={pageNum}
-                      onClick={() => setCurrentPage(pageNum)}
-                      className={`px-3 py-2 text-sm font-medium rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 ${
-                        currentPage === pageNum
-                          ? 'bg-indigo-600 text-white'
-                          : 'text-gray-700 bg-white border border-gray-300 hover:bg-gray-50'
-                      }`}
-                    >
-                      {pageNum}
-                    </button>
-                  );
-                })}
-              </div>
-
-              <button
-                onClick={() =>
-                  setCurrentPage((prev) => Math.min(totalPages, prev + 1))
-                }
-                disabled={currentPage === totalPages}
-                className="px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-              >
-                Next
-              </button>
-            </div>
-          </div>
-        </div>
+        <Card>
+          <Table
+            columns={columns}
+            dataSource={filteredLiabilities}
+            rowKey="id"
+            pagination={{
+              pageSize: 10,
+              showSizeChanger: true,
+              showTotal: (total) => `Total ${total} liabilities`,
+            }}
+            scroll={{ x: 'max-content' }}
+            rowClassName={(record) =>
+              !record.is_active ? 'ant-table-row-disabled' : ''
+            }
+          />
+        </Card>
       )}
 
       <Modal
-        isOpen={isModalOpen}
-        onClose={handleCloseModal}
         title={editingLiability ? 'Edit Liability' : 'Add Liability'}
+        open={isModalOpen}
+        onCancel={handleCloseModal}
+        onOk={handleSubmit}
+        confirmLoading={isCreating || isUpdating}
+        okText={editingLiability ? 'Update' : 'Create'}
+        cancelText="Cancel"
+        width={700}
       >
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label
-              htmlFor="name"
-              className="block text-sm font-medium text-gray-700"
-            >
-              Name
-            </label>
-            <input
-              type="text"
-              id="name"
-              required
-              value={formData.name}
-              onChange={(e) =>
-                setFormData({ ...formData, name: e.target.value })
-              }
-              className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
-              placeholder="e.g., BPI Credit Card, Atome Loan"
-            />
-          </div>
+        <Form
+          form={form}
+          layout="vertical"
+          onFinish={handleSubmit}
+        >
+          <Form.Item
+            name="name"
+            label="Name"
+            rules={[{ required: true, message: 'Please enter a name' }]}
+          >
+            <Input placeholder="e.g., BPI Credit Card, Atome Loan" />
+          </Form.Item>
 
-          <div>
-            <label
-              htmlFor="amount"
-              className="block text-sm font-medium text-gray-700"
-            >
-              Monthly Amount (₱)
-            </label>
-            <input
-              type="number"
-              id="amount"
-              required
-              step="0.01"
-              min="0"
-              value={formData.amount}
-              onChange={(e) =>
-                setFormData({ ...formData, amount: e.target.value })
-              }
-              className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+          <Form.Item
+            name="amount"
+            label="Monthly Amount (₱)"
+            rules={[
+              { required: true, message: 'Please enter an amount' },
+              { type: 'number', min: 0.01, message: 'Amount must be greater than 0' },
+            ]}
+          >
+            <InputNumber
+              style={{ width: '100%' }}
+              prefix="₱"
+              step={0.01}
+              min={0}
               placeholder="0.00"
             />
-          </div>
+          </Form.Item>
 
-          <div>
-            <label
-              htmlFor="due_date"
-              className="block text-sm font-medium text-gray-700"
-            >
-              Due Date (Day of Month, 1-31)
-            </label>
-            <input
-              type="number"
-              id="due_date"
-              required
-              min="1"
-              max="31"
-              value={formData.due_date}
-              onChange={(e) =>
-                setFormData({ ...formData, due_date: e.target.value })
-              }
-              className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+          <Row gutter={16}>
+            <Col xs={24} sm={12}>
+              <Form.Item
+                name="due_date"
+                label="Due Date (Day of Month, 1-31)"
+                rules={[
+                  { required: true, message: 'Please enter a due date' },
+                  { type: 'number', min: 1, max: 31, message: 'Due date must be between 1 and 31' },
+                ]}
+              >
+                <InputNumber
+                  style={{ width: '100%' }}
+                  min={1}
+                  max={31}
               placeholder="15"
             />
-          </div>
+              </Form.Item>
+            </Col>
+            <Col xs={24} sm={12}>
+              <Form.Item
+                name="start_date"
+                label="Start Date"
+                rules={[{ required: true, message: 'Please select a start date' }]}
+              >
+                <DatePicker style={{ width: '100%' }} />
+              </Form.Item>
+            </Col>
+          </Row>
 
-          <div>
-            <label
-              htmlFor="category"
-              className="block text-sm font-medium text-gray-700"
-            >
-              Category
-            </label>
-            <select
-              id="category"
-              required
-              value={formData.category}
-              onChange={(e) => {
-                const newCategory = e.target.value as Liability['category'];
+          <Form.Item
+            name="category"
+            label="Category"
+            rules={[{ required: true, message: 'Please select a category' }]}
+          >
+            <Select
+              onChange={(value) => {
+                const newCategory = value as Liability['category'];
                 // Auto-set payment_type based on category
                 let newPaymentType: 'straight' | 'installment' | null =
                   'straight';
@@ -801,297 +695,254 @@ export function Liabilities() {
                   newPaymentType = 'straight';
                 } else if (newCategory === 'credit_card') {
                   // Keep existing payment_type for credit card, or default to straight
-                  newPaymentType = formData.payment_type || 'straight';
+                  newPaymentType = form.getFieldValue('payment_type') || 'straight';
                 }
 
-                setFormData({
-                  ...formData,
-                  category: newCategory,
+                form.setFieldsValue({
                   payment_type: newPaymentType,
                   // Clear current_balance and months_to_pay for recurring bills
                   current_balance:
                     newCategory === 'recurring_bill' || newCategory === 'other'
-                      ? ''
-                      : formData.current_balance,
+                      ? undefined
+                      : form.getFieldValue('current_balance'),
                   months_to_pay:
                     newCategory === 'recurring_bill' ||
                     (newCategory === 'credit_card' &&
                       newPaymentType === 'straight')
-                      ? ''
-                      : formData.months_to_pay,
+                      ? undefined
+                      : form.getFieldValue('months_to_pay'),
                 });
               }}
-              className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
             >
-              <option value="credit_card">Credit Card</option>
-              <option value="loan">Loan</option>
-              <option value="recurring_bill">Recurring Bill</option>
-              <option value="other">Other</option>
-            </select>
-          </div>
+              <Option value="credit_card">Credit Card</Option>
+              <Option value="loan">Loan</Option>
+              <Option value="recurring_bill">Recurring Bill</Option>
+              <Option value="other">Other</Option>
+            </Select>
+          </Form.Item>
 
           {/* Payment Type - Only for credit cards */}
-          {formData.category === 'credit_card' && (
-            <div>
-              <label
-                htmlFor="payment_type"
-                className="block text-sm font-medium text-gray-700"
-              >
-                Payment Type
-              </label>
-              <select
-                id="payment_type"
-                required
-                value={formData.payment_type || 'straight'}
-                onChange={(e) => {
-                  const newPaymentType = e.target.value as
-                    | 'straight'
-                    | 'installment';
-                  setFormData({
-                    ...formData,
+          <Form.Item
+            noStyle
+            shouldUpdate={(prevValues, currentValues) =>
+              prevValues.category !== currentValues.category
+            }
+          >
+            {({ getFieldValue }) => {
+              const category = getFieldValue('category');
+              if (category === 'credit_card') {
+                return (
+                  <Form.Item
+                    name="payment_type"
+                    label="Payment Type"
+                    rules={[{ required: true, message: 'Please select a payment type' }]}
+                  >
+                    <Select
+                      onChange={(value) => {
+                        const newPaymentType = value as 'straight' | 'installment';
+                        form.setFieldsValue({
                     payment_type: newPaymentType,
                     // Clear months_to_pay if switching to straight
                     months_to_pay:
                       newPaymentType === 'straight'
-                        ? ''
-                        : formData.months_to_pay,
+                              ? undefined
+                              : form.getFieldValue('months_to_pay'),
                   });
                 }}
-                className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
-              >
-                <option value="straight">Straight (Monthly Payment)</option>
-                <option value="installment">Installment (Multi-month)</option>
-              </select>
-              <p className="mt-1 text-xs text-gray-500">
-                {formData.payment_type === 'straight'
+                    >
+                      <Option value="straight">Straight (Monthly Payment)</Option>
+                      <Option value="installment">Installment (Multi-month)</Option>
+                    </Select>
+                    <div style={{ fontSize: '12px', color: '#6b7280', marginTop: 4 }}>
+                      {form.getFieldValue('payment_type') === 'straight'
                   ? 'Pay the full amount monthly (months_to_pay = 1)'
                   : 'Convert to installments over multiple months'}
-              </p>
             </div>
-          )}
-
-          <div>
-            <label
-              htmlFor="source"
-              className="block text-sm font-medium text-gray-700"
-            >
-              Source / Provider (Optional)
-            </label>
-            <input
-              type="text"
-              id="source"
-              value={formData.source}
-              onChange={(e) =>
-                setFormData({ ...formData, source: e.target.value })
+                  </Form.Item>
+                );
               }
-              className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+              return null;
+            }}
+          </Form.Item>
+
+          <Form.Item
+            name="source"
+            label="Source / Provider (Optional)"
+          >
+            <Input
               placeholder={
-                formData.category === 'credit_card'
+                form.getFieldValue('category') === 'credit_card'
                   ? 'e.g., BPI, RCBC, BDO'
-                  : formData.category === 'loan'
+                  : form.getFieldValue('category') === 'loan'
                   ? 'e.g., Atome, Home Credit, BillEase'
-                  : formData.category === 'recurring_bill'
+                  : form.getFieldValue('category') === 'recurring_bill'
                   ? 'e.g., Meralco, Maynilad, Manila Water'
                   : 'e.g., Provider name'
               }
             />
-            <p className="mt-1 text-xs text-gray-500">
-              {formData.category === 'credit_card' &&
-                'Enter the bank name (BPI, RCBC, BDO, etc.)'}
-              {formData.category === 'loan' &&
-                'Enter the loan provider name (Atome, Home Credit, etc.)'}
-              {formData.category === 'recurring_bill' &&
-                'Enter the utility company name (Meralco, Maynilad, Manila Water, etc.)'}
-              {formData.category === 'other' &&
-                'Enter the provider or source name'}
-            </p>
-          </div>
+          </Form.Item>
 
-          {formData.category === 'credit_card' && (
+          <Form.Item
+            noStyle
+            shouldUpdate={(prevValues, currentValues) =>
+              prevValues.category !== currentValues.category
+            }
+          >
+            {({ getFieldValue }) => {
+              const category = getFieldValue('category');
+              if (category === 'credit_card') {
+                return (
             <>
               {creditCards.length > 0 && (
-                <div>
-                  <label
-                    htmlFor="credit_card_id"
-                    className="block text-sm font-medium text-gray-700"
-                  >
-                    Link to Credit Card (Optional)
-                  </label>
-                  <select
-                    id="credit_card_id"
-                    value={formData.credit_card_id}
-                    onChange={(e) => {
+                      <Form.Item
+                        name="credit_card_id"
+                        label="Link to Credit Card (Optional)"
+                      >
+                        <Select
+                          placeholder="Select a credit card..."
+                          allowClear
+                          onChange={(value) => {
                       const selectedCard = creditCards.find(
-                        (c) => c.id === e.target.value
-                      );
-                      setFormData({
-                        ...formData,
-                        credit_card_id: e.target.value,
-                        credit_limit: selectedCard
-                          ? selectedCard.credit_limit.toString()
-                          : formData.credit_limit,
-                        current_balance: selectedCard
-                          ? selectedCard.current_balance.toString()
-                          : formData.current_balance,
-                      });
-                    }}
-                    className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
-                  >
-                    <option value="">Select a credit card...</option>
+                              (c) => c.id === value
+                            );
+                            if (selectedCard) {
+                              form.setFieldsValue({
+                                credit_limit: selectedCard.credit_limit,
+                                current_balance: selectedCard.current_balance,
+                              });
+                            }
+                          }}
+                        >
                     {creditCards
                       .filter((c) => c.is_active)
                       .map((card) => (
-                        <option key={card.id} value={card.id}>
+                              <Option key={card.id} value={card.id}>
                           {card.bank} - {card.name} (Limit:{' '}
                           {formatCurrency(card.credit_limit)})
-                        </option>
+                              </Option>
                       ))}
-                  </select>
-                  <p className="mt-1 text-xs text-gray-500">
+                        </Select>
+                        <div style={{ fontSize: '12px', color: '#6b7280', marginTop: 4 }}>
                     Select a registered credit card to link this liability.
                     Credit limit and balance will be auto-filled.
-                  </p>
                 </div>
-              )}
-              <div>
-                <label
-                  htmlFor="credit_limit"
-                  className="block text-sm font-medium text-gray-700"
-                >
-                  Credit Limit (₱)
-                </label>
-                <input
-                  type="number"
-                  id="credit_limit"
-                  step="0.01"
-                  min="0"
-                  value={formData.credit_limit}
-                  onChange={(e) =>
-                    setFormData({ ...formData, credit_limit: e.target.value })
-                  }
-                  className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+                      </Form.Item>
+                    )}
+                    <Form.Item name="credit_limit" label="Credit Limit (₱)">
+                      <InputNumber
+                        style={{ width: '100%' }}
+                        prefix="₱"
+                        step={0.01}
+                        min={0}
                   placeholder="0.00"
                 />
-              </div>
-            </>
-          )}
+                    </Form.Item>
+                  </>
+                );
+              }
+              return null;
+            }}
+          </Form.Item>
 
           {/* Info for credit cards */}
-          {formData.category === 'credit_card' &&
-            formData.payment_type === 'straight' && (
-              <div className="bg-blue-50 border border-blue-200 rounded-md p-3">
-                <p className="text-sm text-blue-800">
-                  <strong>Note:</strong> Straight payment automatically sets{' '}
-                  <strong>months_to_pay = 1</strong> (monthly payment cycle).
-                </p>
-              </div>
-            )}
+          <Form.Item
+            noStyle
+            shouldUpdate={(prevValues, currentValues) =>
+              prevValues.category !== currentValues.category ||
+              prevValues.payment_type !== currentValues.payment_type
+            }
+          >
+            {({ getFieldValue }) => {
+              const category = getFieldValue('category');
+              const paymentType = getFieldValue('payment_type');
+              if (category === 'credit_card' && paymentType === 'straight') {
+                return (
+                  <Alert
+                    message="Note: Straight payment automatically sets months_to_pay = 1 (monthly payment cycle)."
+                    type="info"
+                    showIcon
+                    style={{ marginBottom: 16 }}
+                  />
+                );
+              }
+              return null;
+            }}
+          </Form.Item>
 
           {/* Current Balance - Only for credit cards and loans */}
-          {(formData.category === 'credit_card' ||
-            formData.category === 'loan') && (
-            <div>
-              <label
-                htmlFor="current_balance"
-                className="block text-sm font-medium text-gray-700"
-              >
-                Current Balance (₱)
-              </label>
-              <input
-                type="number"
-                id="current_balance"
-                step="0.01"
-                min="0"
-                value={formData.current_balance}
-                onChange={(e) =>
-                  setFormData({ ...formData, current_balance: e.target.value })
-                }
-                className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+          <Form.Item
+            noStyle
+            shouldUpdate={(prevValues, currentValues) =>
+              prevValues.category !== currentValues.category
+            }
+          >
+            {({ getFieldValue }) => {
+              const category = getFieldValue('category');
+              if (category === 'credit_card' || category === 'loan') {
+                return (
+                  <Form.Item name="current_balance" label="Current Balance (₱)">
+                    <InputNumber
+                      style={{ width: '100%' }}
+                      prefix="₱"
+                      step={0.01}
+                      min={0}
                 placeholder="0.00"
               />
-              <p className="mt-1 text-xs text-gray-500">
-                {formData.category === 'credit_card' &&
+                    <div style={{ fontSize: '12px', color: '#6b7280', marginTop: 4 }}>
+                      {category === 'credit_card' &&
                   'Outstanding balance on this credit card'}
-                {formData.category === 'loan' && 'Remaining principal amount'}
-                {formData.category === 'credit_card' &&
-                  formData.payment_type === 'installment' &&
+                      {category === 'loan' && 'Remaining principal amount'}
+                      {category === 'credit_card' &&
+                        form.getFieldValue('payment_type') === 'installment' &&
                   'Remaining amount to pay for this installment'}
-              </p>
             </div>
-          )}
-
-          <div>
-            <label
-              htmlFor="start_date"
-              className="block text-sm font-medium text-gray-700"
-            >
-              Start Date
-            </label>
-            <input
-              type="date"
-              id="start_date"
-              required
-              value={formData.start_date}
-              onChange={(e) =>
-                setFormData({ ...formData, start_date: e.target.value })
+                  </Form.Item>
+                );
               }
-              className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
-            />
-            <p className="mt-1 text-xs text-gray-500">
-              When does this payment period start?
-            </p>
-          </div>
+              return null;
+            }}
+          </Form.Item>
 
           {/* Months to Pay - Only for loans and credit card installments */}
-          {(formData.category === 'loan' ||
-            (formData.category === 'credit_card' &&
-              formData.payment_type === 'installment')) && (
-            <div>
-              <label
-                htmlFor="months_to_pay"
-                className="block text-sm font-medium text-gray-700"
-              >
-                Months to Pay
-              </label>
-              <input
-                type="number"
-                id="months_to_pay"
-                min="1"
-                value={formData.months_to_pay}
-                onChange={(e) =>
-                  setFormData({ ...formData, months_to_pay: e.target.value })
-                }
-                className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+          <Form.Item
+            noStyle
+            shouldUpdate={(prevValues, currentValues) =>
+              prevValues.category !== currentValues.category ||
+              prevValues.payment_type !== currentValues.payment_type
+            }
+          >
+            {({ getFieldValue }) => {
+              const category = getFieldValue('category');
+              const paymentType = getFieldValue('payment_type');
+              if (
+                category === 'loan' ||
+                (category === 'credit_card' && paymentType === 'installment')
+              ) {
+                return (
+                  <Form.Item
+                    name="months_to_pay"
+                    label="Months to Pay"
+                    rules={[
+                      { required: true, message: 'Please enter months to pay' },
+                      { type: 'number', min: 1, message: 'Must be at least 1 month' },
+                    ]}
+                  >
+                    <InputNumber
+                      style={{ width: '100%' }}
+                      min={1}
                 placeholder="e.g., 12"
               />
-              <p className="mt-1 text-xs text-gray-500">
+                    <div style={{ fontSize: '12px', color: '#6b7280', marginTop: 4 }}>
                 Total number of months for this{' '}
-                {formData.category === 'loan' ? 'loan' : 'installment'}.
-              </p>
+                      {category === 'loan' ? 'loan' : 'installment'}.
             </div>
-          )}
-
-          <div className="flex justify-end gap-3 pt-4">
-            <button
-              type="button"
-              onClick={handleCloseModal}
-              className="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={isCreating || isUpdating}
-              className="px-4 py-2 bg-indigo-600 text-white rounded-md text-sm font-medium hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50"
-            >
-              {isCreating || isUpdating
-                ? 'Saving...'
-                : editingLiability
-                ? 'Update'
-                : 'Create'}
-            </button>
-          </div>
-        </form>
+                  </Form.Item>
+                );
+              }
+              return null;
+            }}
+          </Form.Item>
+        </Form>
       </Modal>
     </div>
   );

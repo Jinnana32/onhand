@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef } from 'react';
+import { useState, useMemo } from 'react';
 import {
   useLiabilities,
   useExpenses,
@@ -6,7 +6,43 @@ import {
   useProfile,
 } from '../hooks';
 import { formatCurrency } from '../lib/utils';
-import { Modal } from '../components/Modal';
+import {
+  Typography,
+  Space,
+  Button,
+  Select,
+  Dropdown,
+  Segmented,
+  Card,
+  Row,
+  Col,
+  Statistic,
+  Tag,
+  Checkbox,
+  Modal,
+  Alert,
+  Descriptions,
+  Empty,
+  Skeleton,
+  List,
+  Badge,
+  message,
+  Form,
+  InputNumber,
+} from 'antd';
+import {
+  LeftOutlined,
+  RightOutlined,
+  CalendarOutlined,
+  UnorderedListOutlined,
+  FilterOutlined,
+  CloseOutlined,
+  EditOutlined,
+} from '@ant-design/icons';
+import type { MenuProps } from 'antd';
+
+const { Title, Text } = Typography;
+const { Option } = Select;
 
 type ViewMode = 'calendar' | 'list';
 type FilterGroup =
@@ -30,7 +66,7 @@ export function CashFlow() {
     updateIncomeSourceAsync,
     createIncomeSourceAsync,
   } = useIncomeSources();
-  const { profile, isLoading: isLoadingProfile } = useProfile();
+  const { profile, isLoading: isLoadingProfile, updateProfile, isUpdating: isUpdatingProfile } = useProfile();
   const isLoading =
     isLoadingLiabilities ||
     isLoadingExpenses ||
@@ -40,9 +76,7 @@ export function CashFlow() {
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [viewMode, setViewMode] = useState<ViewMode>('calendar');
   const [selectedFilters, setSelectedFilters] = useState<FilterGroup[]>([]);
-  const [isFilterDropdownOpen, setIsFilterDropdownOpen] = useState(false);
-  const filterDropdownRef = useRef<HTMLDivElement>(null);
-  const [paidFilter, setPaidFilter] = useState<'all' | 'paid' | 'unpaid'>(
+  const [paidFilter, setPaidFilter] = useState<'all' | 'paid' | 'unpaid' | 'unchecked'>(
     'all'
   );
   const [pendingBill, setPendingBill] = useState<{
@@ -56,6 +90,8 @@ export function CashFlow() {
     year: number;
     month: number;
   } | null>(null);
+  const [isEditCashModalOpen, setIsEditCashModalOpen] = useState(false);
+  const [cashForm] = Form.useForm();
   const [pendingIncome, setPendingIncome] = useState<{
     income: {
       id: string;
@@ -68,25 +104,6 @@ export function CashFlow() {
     month: number;
   } | null>(null);
 
-  // Close dropdown when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (
-        filterDropdownRef.current &&
-        !filterDropdownRef.current.contains(event.target as Node)
-      ) {
-        setIsFilterDropdownOpen(false);
-      }
-    };
-
-    if (isFilterDropdownOpen) {
-      document.addEventListener('mousedown', handleClickOutside);
-    }
-
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
-  }, [isFilterDropdownOpen]);
 
   // Get month name
   const monthNames = [
@@ -491,9 +508,27 @@ export function CashFlow() {
 
     // Apply paid/unpaid filter
     if (paidFilter === 'paid') {
-      filteredBills = filteredBills.filter((bill) => bill.isPaid);
+      filteredBills = filteredBills.filter((bill) => {
+        if (bill.type === 'income') {
+          return bill.isReceived || false;
+        }
+        return bill.isPaid;
+      });
     } else if (paidFilter === 'unpaid') {
-      filteredBills = filteredBills.filter((bill) => !bill.isPaid);
+      filteredBills = filteredBills.filter((bill) => {
+        if (bill.type === 'income') {
+          return !bill.isReceived;
+        }
+        return !bill.isPaid;
+      });
+    } else if (paidFilter === 'unchecked') {
+      // Unchecked = items that haven't been checked yet (not paid/received)
+      filteredBills = filteredBills.filter((bill) => {
+        if (bill.type === 'income') {
+          return !bill.isReceived;
+        }
+        return !bill.isPaid;
+      });
     }
 
     return filteredBills;
@@ -621,19 +656,17 @@ export function CashFlow() {
     billType: 'liability' | 'expense' | 'income',
     category: string,
     paymentType?: 'straight' | 'installment' | null
-  ) => {
+  ): string => {
     if (billType === 'income') {
-      return 'bg-green-100 text-green-800';
+      return 'green';
     }
     switch (category) {
       case 'credit_card':
-        return paymentType === 'installment'
-          ? 'bg-orange-100 text-orange-800'
-          : 'bg-blue-100 text-blue-800';
+        return paymentType === 'installment' ? 'orange' : 'blue';
       case 'loan':
-        return 'bg-purple-100 text-purple-800';
+        return 'purple';
       default:
-        return 'bg-gray-100 text-gray-800';
+        return 'default';
     }
   };
 
@@ -1055,13 +1088,27 @@ export function CashFlow() {
 
       // Apply paid/unpaid filter
       if (paidFilter === 'paid') {
-        monthsData[monthKey] = monthsData[monthKey].filter(
-          (bill) => bill.isPaid
-        );
+        monthsData[monthKey] = monthsData[monthKey].filter((bill) => {
+          if (bill.type === 'income') {
+            return bill.isReceived || false;
+          }
+          return bill.isPaid;
+        });
       } else if (paidFilter === 'unpaid') {
-        monthsData[monthKey] = monthsData[monthKey].filter(
-          (bill) => !bill.isPaid
-        );
+        monthsData[monthKey] = monthsData[monthKey].filter((bill) => {
+          if (bill.type === 'income') {
+            return !bill.isReceived;
+          }
+          return !bill.isPaid;
+        });
+      } else if (paidFilter === 'unchecked') {
+        // Unchecked = items that haven't been checked yet (not paid/received)
+        monthsData[monthKey] = monthsData[monthKey].filter((bill) => {
+          if (bill.type === 'income') {
+            return !bill.isReceived;
+          }
+          return !bill.isPaid;
+        });
       }
     }
 
@@ -1078,19 +1125,12 @@ export function CashFlow() {
 
   if (isLoading) {
     return (
-      <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <h2 className="text-2xl font-bold text-gray-900">Cash Flow</h2>
-        </div>
-        <div className="bg-white p-6 rounded-lg shadow animate-pulse">
-          <div className="h-4 bg-gray-200 rounded w-1/4 mb-4"></div>
-          <div className="space-y-3">
-            {[1, 2, 3].map((i) => (
-              <div key={i} className="h-16 bg-gray-200 rounded"></div>
-            ))}
-          </div>
-        </div>
-      </div>
+      <Space direction="vertical" size="large" style={{ width: '100%' }}>
+        <Title level={2}>Cash Flow</Title>
+        <Card>
+          <Skeleton active paragraph={{ rows: 3 }} />
+        </Card>
+      </Space>
     );
   }
 
@@ -1110,6 +1150,44 @@ export function CashFlow() {
         : [...prev, filter]
     );
   };
+
+  const filterMenuItems: MenuProps['items'] = [
+    ...filterOptions.map((option) => ({
+      key: option.value,
+      label: (
+        <Checkbox
+          checked={selectedFilters.includes(option.value)}
+          onChange={() => handleFilterToggle(option.value)}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {option.label}
+        </Checkbox>
+      ),
+    })),
+    ...(selectedFilters.length > 0
+      ? [
+          {
+            type: 'divider' as const,
+          },
+          {
+            key: 'clear-all',
+            label: (
+              <Button
+                type="link"
+                size="small"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setSelectedFilters([]);
+                }}
+                style={{ padding: 0 }}
+              >
+                Clear all filters
+              </Button>
+            ),
+          },
+        ]
+      : []),
+  ];
 
   // Handle marking a bill as paid
   const handleTogglePaid = (
@@ -1155,11 +1233,12 @@ export function CashFlow() {
         frequency: 'one_time',
         liability_id: bill.id, // Link expense to the liability
       });
+      message.success('Bill marked as paid successfully');
       // Close the confirmation dialog after successful creation
       setPendingBill(null);
     } catch (error) {
       console.error('Error creating expense:', error);
-      alert('Failed to mark bill as paid. Please try again.');
+      message.error('Failed to mark bill as paid. Please try again.');
     }
   };
 
@@ -1215,11 +1294,12 @@ export function CashFlow() {
           },
         });
       }
+      message.success('Income marked as received successfully');
       // Close the confirmation dialog after successful update
       setPendingIncome(null);
     } catch (error) {
       console.error('Error updating income:', error);
-      alert('Failed to mark income as received. Please try again.');
+      message.error('Failed to mark income as received. Please try again.');
     }
   };
 
@@ -1234,305 +1314,185 @@ export function CashFlow() {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-bold text-gray-900">Upcoming Bills</h2>
-        <div className="flex items-center gap-4">
+    <Space direction="vertical" size="large" style={{ width: '100%' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 16 }}>
+        <Title level={2} style={{ margin: 0 }}>Cash Flow</Title>
+        <Space wrap>
           {/* Filter Dropdown */}
-          <div className="relative" ref={filterDropdownRef}>
-            <button
-              className="px-4 py-2 bg-white border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 flex items-center gap-2"
-              onClick={() => setIsFilterDropdownOpen(!isFilterDropdownOpen)}
-            >
-              <svg
-                className="w-4 h-4"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"
-                />
-              </svg>
+          <Dropdown
+            menu={{
+              items: filterMenuItems,
+              onSelect: ({ key }) => handleFilterToggle(key as FilterGroup),
+            }}
+            trigger={['click']}
+          >
+            <Button icon={<FilterOutlined />}>
               Filter
               {selectedFilters.length > 0 && (
-                <span className="ml-1 px-2 py-0.5 text-xs font-semibold bg-indigo-100 text-indigo-800 rounded-full">
-                  {selectedFilters.length}
-                </span>
+                <Badge count={selectedFilters.length} style={{ marginLeft: 8 }} />
               )}
-            </button>
-            {isFilterDropdownOpen && (
-              <div
-                className="absolute right-0 mt-2 w-56 bg-white rounded-md shadow-lg z-10 border border-gray-200"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <div className="py-1">
-                  {filterOptions.map((option) => (
-                    <label
-                      key={option.value}
-                      className="flex items-center px-4 py-2 hover:bg-gray-50 cursor-pointer"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={selectedFilters.includes(option.value)}
-                        onChange={() => handleFilterToggle(option.value)}
-                        className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
-                      />
-                      <span className="ml-3 text-sm text-gray-700">
-                        {option.label}
-                      </span>
-                    </label>
-                  ))}
-                  {selectedFilters.length > 0 && (
-                    <div className="border-t border-gray-200 px-4 py-2">
-                      <button
-                        onClick={() => setSelectedFilters([])}
-                        className="text-sm text-indigo-600 hover:text-indigo-700 font-medium"
-                      >
-                        Clear all filters
-                      </button>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
+            </Button>
+          </Dropdown>
           {/* Paid/Unpaid Filter */}
-          <select
+          <Select
             value={paidFilter}
-            onChange={(e) =>
-              setPaidFilter(e.target.value as 'all' | 'paid' | 'unpaid')
-            }
-            className="px-4 py-2 bg-white border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+            onChange={(value) => setPaidFilter(value as 'all' | 'paid' | 'unpaid' | 'unchecked')}
+            style={{ width: 140 }}
           >
-            <option value="all">All Bills</option>
-            <option value="paid">Paid</option>
-            <option value="unpaid">Unpaid</option>
-          </select>
-          <div className="flex items-center gap-2 bg-gray-100 p-1 rounded-lg">
-            <button
-              onClick={() => setViewMode('calendar')}
-              className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
-                viewMode === 'calendar'
-                  ? 'bg-white text-indigo-600 shadow-sm'
-                  : 'text-gray-600 hover:text-gray-900'
-              }`}
-            >
-              <span className="flex items-center gap-2">
-                <svg
-                  className="w-4 h-4"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
-                  />
-                </svg>
-                Calendar
-              </span>
-            </button>
-            <button
-              onClick={() => setViewMode('list')}
-              className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
-                viewMode === 'list'
-                  ? 'bg-white text-indigo-600 shadow-sm'
-                  : 'text-gray-600 hover:text-gray-900'
-              }`}
-            >
-              <span className="flex items-center gap-2">
-                <svg
-                  className="w-4 h-4"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M4 6h16M4 10h16M4 14h16M4 18h16"
-                  />
-                </svg>
-                List
-              </span>
-            </button>
-          </div>
-        </div>
+            <Option value="all">All Bills</Option>
+            <Option value="paid">Paid</Option>
+            <Option value="unpaid">Unpaid</Option>
+            <Option value="unchecked">Unchecked</Option>
+          </Select>
+          {/* View Mode Toggle */}
+          <Segmented
+            options={[
+              { label: 'Calendar', value: 'calendar', icon: <CalendarOutlined /> },
+              { label: 'List', value: 'list', icon: <UnorderedListOutlined /> },
+            ]}
+            value={viewMode}
+            onChange={(value) => setViewMode(value as ViewMode)}
+          />
+        </Space>
       </div>
 
       {/* Active Filters Display */}
       {selectedFilters.length > 0 && (
-        <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-3">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-sm font-medium text-indigo-900">
-              Active filters:
-            </span>
+        <Alert
+          message={
+            <Space wrap>
+              <Text strong>Active filters:</Text>
             {selectedFilters.map((filter) => {
               const option = filterOptions.find((o) => o.value === filter);
               return (
-                <span
+                  <Tag
                   key={filter}
-                  className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800"
+                    closable
+                    onClose={() => handleFilterToggle(filter)}
+                    color="blue"
                 >
                   {option?.label}
-                  <button
-                    onClick={() => handleFilterToggle(filter)}
-                    className="ml-2 text-indigo-600 hover:text-indigo-800"
-                  >
-                    ×
-                  </button>
-                </span>
+                  </Tag>
               );
             })}
-            <button
+              <Button
+                type="link"
+                size="small"
               onClick={() => setSelectedFilters([])}
-              className="text-sm text-indigo-600 hover:text-indigo-700 font-medium ml-auto"
+                style={{ padding: 0 }}
             >
               Clear all
-            </button>
-          </div>
-        </div>
+              </Button>
+            </Space>
+          }
+          type="info"
+          showIcon
+        />
       )}
 
       {viewMode === 'calendar' ? (
         <>
           {/* Month Selector */}
-          <div className="bg-white p-4 rounded-lg shadow">
-            <div className="flex items-center justify-between">
-              <button
+          <Card>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Button
+                icon={<LeftOutlined />}
                 onClick={goToPreviousMonth}
-                className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-md"
-              >
-                <svg
-                  className="w-5 h-5"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M15 19l-7-7 7-7"
-                  />
-                </svg>
-              </button>
-
-              <div className="flex items-center gap-4">
-                <h3 className="text-lg font-semibold text-gray-900">
+              />
+              <Space>
+                <Title level={4} style={{ margin: 0 }}>
                   {monthNames[selectedMonth]} {selectedYear}
-                </h3>
-                <button
+                </Title>
+                <Button
+                  type="link"
                   onClick={goToCurrentMonth}
-                  className="px-3 py-1 text-sm text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50 rounded-md"
                 >
                   Today
-                </button>
-              </div>
-
-              <button
+                </Button>
+              </Space>
+              <Button
+                icon={<RightOutlined />}
                 onClick={goToNextMonth}
-                className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-md"
-              >
-                <svg
-                  className="w-5 h-5"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M9 5l7 7-7 7"
-                  />
-                </svg>
-              </button>
+              />
             </div>
-          </div>
+          </Card>
 
           {/* Summary Card */}
-          <div className="bg-white p-6 rounded-lg shadow">
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-6">
-              {/* Total Bills */}
-              <div>
-                <p className="text-sm font-medium text-gray-600">Total Bills</p>
-                <p className="text-2xl font-bold text-red-600 mt-1">
-                  {formatCurrency(totalBills)}
-                </p>
-              </div>
-
-              {/* Total Income */}
-              <div>
-                <p className="text-sm font-medium text-gray-600">
-                  Receivable Income
-                </p>
-                <p className="text-2xl font-bold text-green-600 mt-1">
-                  {formatCurrency(totalIncome)}
-                </p>
-                <p className="text-xs text-gray-500 mt-1">
-                  Expected Remaining Cash{' '}
-                  {formatCurrency(expectedRemainingCash)}
-                </p>
-              </div>
-
-              {/* Remaining Funds */}
-              <div>
-                <p className="text-sm font-medium text-gray-600">
-                  Remaining Funds for the month
-                </p>
-                <p
-                  className={`text-2xl font-bold mt-1 ${
-                    remainingMoney >= 0 ? 'text-green-600' : 'text-red-600'
-                  }`}
-                >
-                  {formatCurrency(remainingMoney)}
-                </p>
-                <p className="text-xs text-gray-500 mt-1">
+          <Card title="Summary">
+            <Row gutter={[16, 16]}>
+              <Col xs={24} sm={12} md={8}>
+                <Statistic
+                  title="Total Bills"
+                  value={formatCurrency(totalBills)}
+                  valueStyle={{ color: '#dc2626' }}
+                />
+              </Col>
+              <Col xs={24} sm={12} md={8}>
+                <Statistic
+                  title="Receivable Income"
+                  value={formatCurrency(totalIncome)}
+                  valueStyle={{ color: '#16a34a' }}
+                />
+                <Text type="secondary" style={{ fontSize: '12px', display: 'block', marginTop: 4 }}>
+                  Expected Remaining Cash {formatCurrency(expectedRemainingCash)}
+                </Text>
+              </Col>
+              <Col xs={24} sm={12} md={8}>
+                <Statistic
+                  title="Remaining Funds for the month"
+                  value={formatCurrency(remainingMoney)}
+                  valueStyle={{ color: remainingMoney >= 0 ? '#16a34a' : '#dc2626' }}
+                />
+                <Text type="secondary" style={{ fontSize: '12px', display: 'block', marginTop: 4 }}>
                   Total bills - Received income
-                </p>
-              </div>
-
-              {/* Remaining Bills */}
-              <div>
-                <p className="text-sm font-medium text-gray-600">Upaid Bills</p>
-                <p className="text-2xl font-bold text-orange-600 mt-1">
-                  {formatCurrency(remainingBills)}
-                </p>
-                <p className="text-xs text-gray-500 mt-1">Unpaid liabilities</p>
-              </div>
-
-              {/* Overall Funds */}
-              <div>
-                <p className="text-sm font-medium text-gray-600">
-                  Overall Funds
-                </p>
-                <p className="text-2xl font-bold text-blue-600 mt-1">
-                  {formatCurrency(profile?.current_cash || 0)}
-                </p>
-                <p className="text-xs text-gray-500 mt-1">
+                </Text>
+              </Col>
+              <Col xs={24} sm={12} md={8}>
+                <Statistic
+                  title="Unpaid Bills"
+                  value={formatCurrency(remainingBills)}
+                  valueStyle={{ color: '#ea580c' }}
+                />
+                <Text type="secondary" style={{ fontSize: '12px', display: 'block', marginTop: 4 }}>
+                  Unpaid liabilities
+                </Text>
+              </Col>
+              <Col xs={24} sm={12} md={8}>
+                <Statistic
+                  title={
+                    <Space>
+                      <span>Overall Funds</span>
+                      <Button
+                        type="text"
+                        size="small"
+                        icon={<EditOutlined />}
+                        onClick={() => {
+                          cashForm.setFieldsValue({ current_cash: profile?.current_cash || 0 });
+                          setIsEditCashModalOpen(true);
+                        }}
+                        style={{ padding: 0, height: 'auto' }}
+                      />
+                    </Space>
+                  }
+                  value={formatCurrency(profile?.current_cash || 0)}
+                  valueStyle={{ color: '#2563eb' }}
+                />
+                <Text type="secondary" style={{ fontSize: '12px', display: 'block', marginTop: 4 }}>
                   Current cash on hand
-                </p>
-              </div>
-            </div>
-          </div>
+                </Text>
+              </Col>
+            </Row>
+          </Card>
 
           {/* Bills List */}
           {billsForMonth.length === 0 ? (
-            <div className="bg-white p-12 rounded-lg shadow text-center">
-              <p className="text-gray-500 text-lg">
-                No bills due in {monthNames[selectedMonth]} {selectedYear}
-              </p>
-            </div>
+            <Card>
+              <Empty
+                description={`No bills due in ${monthNames[selectedMonth]} ${selectedYear}`}
+              />
+            </Card>
           ) : (
-            <div className="space-y-4">
+            <Space direction="vertical" size="middle" style={{ width: '100%' }}>
               {Object.keys(billsByDate)
                 .sort((a, b) => parseInt(a) - parseInt(b))
                 .map((day) => {
@@ -1549,6 +1509,10 @@ export function CashFlow() {
                       if (paidFilter === 'all') {
                         return !bill.isPaid;
                       }
+                      // When paidFilter is 'unchecked', only count unpaid bills
+                      if (paidFilter === 'unchecked') {
+                        return !bill.isPaid;
+                      }
                       return true;
                     })
                     .reduce((sum, bill) => sum + bill.amount, 0);
@@ -1557,76 +1521,68 @@ export function CashFlow() {
                     new Date(new Date().setHours(0, 0, 0, 0));
 
                   return (
-                    <div key={day} className="bg-white rounded-lg shadow">
-                      <div
-                        className={`px-6 py-3 border-l-4 ${
-                          isPast
-                            ? 'bg-red-50 border-red-500'
-                            : 'bg-blue-50 border-blue-500'
-                        }`}
-                      >
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <p className="text-sm font-medium text-gray-600">
-                              {new Date(
-                                selectedYear,
-                                selectedMonth,
-                                parseInt(day)
-                              ).toLocaleDateString('en-US', {
-                                weekday: 'long',
-                              })}
-                            </p>
-                            <p className="text-xl font-bold text-gray-900">
-                              {parseInt(day)} {monthNames[selectedMonth]}
-                            </p>
-                          </div>
-                          <div className="text-right">
-                            {dayIncome > 0 && (
-                              <div className="mb-2">
-                                <p className="text-xs font-medium text-gray-500">
-                                  Income
-                                </p>
-                                <p className="text-lg font-bold text-green-600">
-                                  {formatCurrency(dayIncome)}
-                                </p>
-                              </div>
-                            )}
-                            {dayBillsTotal > 0 && (
-                              <div>
-                                <p className="text-xs font-medium text-gray-500">
-                                  Bills
-                                </p>
-                                <p
-                                  className={`text-lg font-bold ${
-                                    isPast ? 'text-red-600' : 'text-blue-600'
-                                  }`}
-                                >
-                                  {formatCurrency(dayBillsTotal)}
-                                </p>
-                              </div>
-                            )}
-                            {dayIncome === 0 && dayBillsTotal === 0 && (
-                              <p className="text-sm text-gray-400">₱0.00</p>
-                            )}
-                          </div>
+                    <Card
+                      key={day}
+                      style={{
+                        borderLeftWidth: 4,
+                        borderLeftColor: '#e5e7eb',
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16, paddingBottom: 16, borderBottom: '1px solid #e5e7eb' }}>
+                        <div>
+                          <Text type="secondary" style={{ fontSize: '12px' }}>
+                            {new Date(
+                              selectedYear,
+                              selectedMonth,
+                              parseInt(day)
+                            ).toLocaleDateString('en-US', {
+                              weekday: 'long',
+                            })}
+                          </Text>
+                          <Title level={4} style={{ margin: '4px 0 0 0' }}>
+                            {parseInt(day)} {monthNames[selectedMonth]}
+                          </Title>
                         </div>
+                        <Space direction="vertical" align="end">
+                          {dayIncome > 0 && (
+                            <div>
+                              <Text type="secondary" style={{ fontSize: '12px' }}>Income</Text>
+                              <div style={{ fontSize: '18px', fontWeight: 600, color: '#16a34a' }}>
+                                {formatCurrency(dayIncome)}
+                              </div>
+                            </div>
+                          )}
+                          {dayBillsTotal > 0 && (
+                            <div>
+                              <Text type="secondary" style={{ fontSize: '12px' }}>Bills</Text>
+                              <div style={{ fontSize: '18px', fontWeight: 600, color: '#dc2626' }}>
+                                {formatCurrency(dayBillsTotal)}
+                              </div>
+                            </div>
+                          )}
+                          {dayIncome === 0 && dayBillsTotal === 0 && (
+                            <Text type="secondary">{formatCurrency(0)}</Text>
+                          )}
+                        </Space>
                       </div>
 
-                      <div className="px-6 py-4 space-y-3">
-                        {dayBills.map((bill, index) => (
-                          <div
+                      <List
+                        dataSource={dayBills}
+                        renderItem={(bill, index) => {
+                          const isCompleted = bill.isPaid || (bill.type === 'income' && bill.isReceived);
+                          return (
+                            <List.Item
                             key={`${bill.type}-${bill.id}-${index}`}
-                            className={`flex items-center justify-between py-3 border-b border-gray-100 last:border-0 ${
-                              bill.isPaid ||
-                              (bill.type === 'income' && bill.isReceived)
-                                ? 'opacity-60'
-                                : ''
-                            }`}
-                          >
-                            <div className="flex items-center gap-3 flex-1">
-                              {bill.type === 'liability' && (
-                                <input
-                                  type="checkbox"
+                              style={{
+                                opacity: isCompleted ? 0.6 : 1,
+                                padding: '12px 0',
+                                borderBottom: index < dayBills.length - 1 ? '1px solid #f0f0f0' : 'none',
+                              }}
+                            >
+                              <List.Item.Meta
+                                avatar={
+                                  bill.type === 'liability' ? (
+                                    <Checkbox
                                   checked={bill.isPaid}
                                   disabled={bill.isPaid}
                                   onChange={() =>
@@ -1636,16 +1592,12 @@ export function CashFlow() {
                                       selectedMonth
                                     )
                                   }
-                                  className="h-5 w-5 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                                />
-                              )}
-                              {bill.type === 'income' && (
-                                <input
-                                  type="checkbox"
+                                    />
+                                  ) : bill.type === 'income' ? (
+                                    <Checkbox
                                   checked={bill.isReceived || false}
                                   disabled={bill.isReceived || false}
                                   onChange={() => {
-                                    // Find the original income source to get frequency and category
                                     const originalIncome = incomeSources?.find(
                                       (inc) =>
                                         inc.id === bill.id ||
@@ -1663,35 +1615,15 @@ export function CashFlow() {
                                       selectedMonth
                                     );
                                   }}
-                                  className="h-5 w-5 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                                />
-                              )}
-                              <div className="flex-1">
-                                <div className="flex items-center gap-2 mb-1">
-                                  <h4
-                                    className={`font-medium ${
-                                      bill.isPaid ||
-                                      (bill.type === 'income' &&
-                                        bill.isReceived)
-                                        ? 'text-gray-500 line-through'
-                                        : 'text-gray-900'
-                                    }`}
-                                  >
+                                    />
+                                  ) : null
+                                }
+                                title={
+                                  <Space>
+                                    <Text delete={isCompleted} strong={!isCompleted}>
                                     {bill.name}
-                                  </h4>
-                                  <span
-                                    className={`px-2 py-1 text-xs font-medium rounded ${
-                                      bill.type === 'expense'
-                                        ? 'bg-green-100 text-green-800'
-                                        : bill.type === 'income'
-                                        ? 'bg-green-100 text-green-800'
-                                        : getCategoryColor(
-                                            bill.type,
-                                            bill.category,
-                                            bill.payment_type
-                                          )
-                                    }`}
-                                  >
+                                    </Text>
+                                    <Tag color={getCategoryColor(bill.type, bill.category, bill.payment_type)}>
                                     {bill.type === 'expense'
                                       ? 'Recurring Expense'
                                       : getCategoryLabel(
@@ -1702,38 +1634,47 @@ export function CashFlow() {
                                           selectedYear,
                                           selectedMonth
                                         )}
-                                  </span>
-                                </div>
-                                {bill.source && (
-                                  <p className="text-sm text-gray-500">
+                                    </Tag>
+                                  </Space>
+                                }
+                                description={
+                                  bill.source ? (
+                                    <Text type="secondary" style={{ fontSize: '12px' }}>
                                     {bill.source}
-                                  </p>
-                                )}
-                              </div>
-                            </div>
-                            <div className="text-right">
-                              <p
-                                className={`text-lg font-semibold ${
-                                  bill.isPaid
-                                    ? 'text-gray-400 line-through'
-                                    : 'text-gray-900'
-                                }`}
+                                    </Text>
+                                  ) : null
+                                }
+                              />
+                              <div>
+                                <Text
+                                  strong
+                                  delete={bill.isPaid || (bill.type === 'income' && bill.isReceived)}
+                                  style={{
+                                    fontSize: '16px',
+                                    color: bill.isPaid || (bill.type === 'income' && bill.isReceived)
+                                      ? '#9ca3af'
+                                      : bill.type === 'income'
+                                      ? '#16a34a'
+                                      : '#dc2626',
+                                  }}
                               >
+                                {bill.type === 'income' ? '+' : '-'}
                                 {formatCurrency(bill.amount)}
-                              </p>
+                                </Text>
                             </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
+                            </List.Item>
+                          );
+                        }}
+                      />
+                    </Card>
                   );
                 })}
-            </div>
+            </Space>
           )}
         </>
       ) : (
         /* List View */
-        <div className="space-y-6">
+        <Space direction="vertical" size="large" style={{ width: '100%' }}>
           {Object.keys(billsByMonth)
             .filter((monthKey) => billsByMonth[monthKey].length > 0)
             .map((monthKey) => {
@@ -1749,6 +1690,10 @@ export function CashFlow() {
                   if (bill.type === 'income') return false;
                   // When paidFilter is 'all', exclude paid bills from total
                   if (paidFilter === 'all') {
+                    return !bill.isPaid;
+                  }
+                  // When paidFilter is 'unchecked', only count unpaid bills
+                  if (paidFilter === 'unchecked') {
                     return !bill.isPaid;
                   }
                   return true;
@@ -1772,70 +1717,52 @@ export function CashFlow() {
               });
 
               return (
-                <div key={monthKey} className="bg-white rounded-lg shadow">
-                  <div
-                    className={`px-6 py-4 border-l-4 ${
-                      isPastMonth
-                        ? 'bg-gray-50 border-gray-400'
-                        : isCurrentMonth
-                        ? 'bg-indigo-50 border-indigo-500'
-                        : 'bg-blue-50 border-blue-500'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between">
+                <Card
+                  key={monthKey}
+                  style={{
+                    borderLeftWidth: 4,
+                    borderLeftColor: '#e5e7eb',
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
                       <div>
-                        <h3 className="text-xl font-bold text-gray-900">
+                      <Title level={3} style={{ margin: 0 }}>
                           {monthNames[month]} {year}
-                        </h3>
+                      </Title>
                         {isCurrentMonth && (
-                          <p className="text-sm text-indigo-600 mt-1">
+                        <Tag color="blue" style={{ marginTop: 4 }}>
                             Current Month
-                          </p>
+                        </Tag>
                         )}
                       </div>
-                      <div className="text-right">
+                    <Space direction="vertical" align="end">
                         {monthIncome > 0 && (
-                          <div className="mb-2">
-                            <p className="text-xs font-medium text-gray-500">
-                              Income
-                            </p>
-                            <p className="text-xl font-bold text-green-600">
+                        <div>
+                          <Text type="secondary" style={{ fontSize: '12px' }}>Income</Text>
+                          <div style={{ fontSize: '20px', fontWeight: 600, color: '#16a34a' }}>
                               {formatCurrency(monthIncome)}
-                            </p>
+                          </div>
                           </div>
                         )}
                         {monthBillsTotal > 0 && (
                           <div>
-                            <p className="text-xs font-medium text-gray-500">
-                              Bills
-                            </p>
-                            <p
-                              className={`text-xl font-bold ${
-                                isPastMonth
-                                  ? 'text-gray-600'
-                                  : isCurrentMonth
-                                  ? 'text-indigo-600'
-                                  : 'text-blue-600'
-                              }`}
-                            >
+                          <Text type="secondary" style={{ fontSize: '12px' }}>Bills</Text>
+                          <div style={{ fontSize: '20px', fontWeight: 600, color: '#dc2626' }}>
                               {formatCurrency(monthBillsTotal)}
-                            </p>
+                          </div>
                           </div>
                         )}
                         {monthIncome === 0 && monthBillsTotal === 0 && (
-                          <p className="text-sm text-gray-400">₱0.00</p>
+                        <Text type="secondary">{formatCurrency(0)}</Text>
                         )}
-                        <p className="text-sm text-gray-500 mt-2">
+                      <Text type="secondary" style={{ fontSize: '12px', marginTop: 8 }}>
                           {monthBills.length}{' '}
-                          {monthBills.length === 1
-                            ? 'transaction'
-                            : 'transactions'}
-                        </p>
-                      </div>
-                    </div>
+                        {monthBills.length === 1 ? 'transaction' : 'transactions'}
+                      </Text>
+                    </Space>
                   </div>
 
-                  <div className="px-6 py-4 space-y-4">
+                  <Space direction="vertical" size="middle" style={{ width: '100%' }}>
                     {Object.keys(billsByDateForMonth)
                       .sort((a, b) => parseInt(a) - parseInt(b))
                       .map((day) => {
@@ -1852,6 +1779,10 @@ export function CashFlow() {
                             if (paidFilter === 'all') {
                               return !bill.isPaid;
                             }
+                            // When paidFilter is 'unchecked', only count unpaid bills
+                            if (paidFilter === 'unchecked') {
+                              return !bill.isPaid;
+                            }
                             return true;
                           })
                           .reduce((sum, bill) => sum + bill.amount, 0);
@@ -1862,73 +1793,80 @@ export function CashFlow() {
                         return (
                           <div
                             key={day}
-                            className="border-l-2 border-gray-200 pl-4"
+                            style={{
+                              borderLeft: '2px solid #e5e7eb',
+                              paddingLeft: 16,
+                            }}
                           >
-                            <div className="flex items-center justify-between mb-2">
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                               <div>
-                                <p className="text-sm font-medium text-gray-600">
+                                <Text type="secondary" style={{ fontSize: '12px' }}>
                                   {dayDate.toLocaleDateString('en-US', {
                                     weekday: 'short',
                                   })}
-                                </p>
-                                <p
-                                  className={`text-lg font-semibold ${
-                                    isPast ? 'text-gray-500' : 'text-gray-900'
-                                  }`}
+                                </Text>
+                                <div
+                                  style={{
+                                    fontSize: '16px',
+                                    fontWeight: 600,
+                                    color: isPast ? '#6b7280' : undefined,
+                                  }}
                                 >
                                   {parseInt(day)} {monthNames[month]}
-                                </p>
                               </div>
-                              <div className="text-right">
+                              </div>
+                              <Space direction="vertical" align="end">
                                 {dayIncome > 0 && (
-                                  <p className="text-sm font-semibold text-green-600">
+                                  <Text strong style={{ color: '#16a34a', fontSize: '14px' }}>
                                     +{formatCurrency(dayIncome)}
-                                  </p>
+                                  </Text>
                                 )}
                                 {dayBillsTotal > 0 && (
-                                  <p
-                                    className={`text-sm font-semibold ${
-                                      isPast ? 'text-gray-500' : 'text-red-600'
-                                    }`}
+                                  <Text
+                                    strong
+                                    style={{
+                                      color: '#dc2626',
+                                      fontSize: '14px',
+                                    }}
                                   >
                                     -{formatCurrency(dayBillsTotal)}
-                                  </p>
+                                  </Text>
                                 )}
                                 {dayIncome === 0 && dayBillsTotal === 0 && (
-                                  <p className="text-sm text-gray-400">₱0.00</p>
+                                  <Text type="secondary" style={{ fontSize: '12px' }}>
+                                    {formatCurrency(0)}
+                                  </Text>
                                 )}
+                              </Space>
                               </div>
-                            </div>
-                            <div className="space-y-2">
-                              {dayBills.map((bill, index) => (
-                                <div
+                            <List
+                              dataSource={dayBills}
+                              renderItem={(bill, index) => {
+                                const isCompleted = bill.isPaid || (bill.type === 'income' && bill.isReceived);
+                                return (
+                                  <List.Item
                                   key={`${bill.type}-${bill.id}-${index}`}
-                                  className={`flex items-center justify-between py-2 pl-2 border-l-2 border-gray-100 ${
-                                    bill.isPaid ||
-                                    (bill.type === 'income' && bill.isReceived)
-                                      ? 'opacity-60'
-                                      : ''
-                                  }`}
-                                >
-                                  <div className="flex items-center gap-3 flex-1">
-                                    {bill.type === 'liability' && (
-                                      <input
-                                        type="checkbox"
+                                    style={{
+                                      opacity: isCompleted ? 0.6 : 1,
+                                      padding: '8px 0 8px 8px',
+                                      borderLeft: '2px solid #f0f0f0',
+                                    }}
+                                  >
+                                    <List.Item.Meta
+                                      avatar={
+                                        bill.type === 'liability' ? (
+                                          <Checkbox
                                         checked={bill.isPaid}
                                         disabled={bill.isPaid}
                                         onChange={() =>
                                           handleTogglePaid(bill, year, month)
                                         }
-                                        className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                                      />
-                                    )}
-                                    {bill.type === 'income' && (
-                                      <input
-                                        type="checkbox"
+                                          />
+                                        ) : bill.type === 'income' ? (
+                                          <Checkbox
                                         checked={bill.isReceived || false}
                                         disabled={bill.isReceived || false}
                                         onChange={() => {
-                                          // Find the original income source to get frequency and category
                                           const originalIncome =
                                             incomeSources?.find(
                                               (inc) =>
@@ -1940,44 +1878,22 @@ export function CashFlow() {
                                               id: bill.id,
                                               name: bill.name,
                                               amount: bill.amount,
-                                              frequency:
-                                                originalIncome?.frequency,
-                                              category:
-                                                originalIncome?.category,
+                                                  frequency: originalIncome?.frequency,
+                                                  category: originalIncome?.category,
                                             },
                                             year,
                                             month
                                           );
                                         }}
-                                        className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                                      />
-                                    )}
-                                    <div className="flex-1">
-                                      <div className="flex items-center gap-2">
-                                        <h4
-                                          className={`text-sm font-medium ${
-                                            bill.isPaid ||
-                                            (bill.type === 'income' &&
-                                              bill.isReceived)
-                                              ? 'text-gray-500 line-through'
-                                              : 'text-gray-900'
-                                          }`}
-                                        >
+                                          />
+                                        ) : null
+                                      }
+                                      title={
+                                        <Space>
+                                          <Text delete={isCompleted} style={{ fontSize: '14px' }}>
                                           {bill.name}
-                                        </h4>
-                                        <span
-                                          className={`px-2 py-0.5 text-xs font-medium rounded ${
-                                            bill.type === 'expense'
-                                              ? 'bg-green-100 text-green-800'
-                                              : bill.type === 'income'
-                                              ? 'bg-green-100 text-green-800'
-                                              : getCategoryColor(
-                                                  bill.type,
-                                                  bill.category,
-                                                  bill.payment_type
-                                                )
-                                          }`}
-                                        >
+                                          </Text>
+                                          <Tag color={getCategoryColor(bill.type, bill.category, bill.payment_type)}>
                                           {bill.type === 'expense'
                                             ? 'Recurring Expense'
                                             : getCategoryLabel(
@@ -1988,218 +1904,175 @@ export function CashFlow() {
                                                 year,
                                                 month
                                               )}
-                                        </span>
-                                      </div>
-                                      {bill.source && (
-                                        <p className="text-xs text-gray-500 mt-0.5">
+                                          </Tag>
+                                        </Space>
+                                      }
+                                      description={
+                                        bill.source ? (
+                                          <Text type="secondary" style={{ fontSize: '12px' }}>
                                           {bill.source}
-                                        </p>
-                                      )}
-                                    </div>
-                                  </div>
-                                  <p
-                                    className={`text-sm font-semibold ${
-                                      bill.isPaid
-                                        ? 'text-gray-400 line-through'
-                                        : 'text-gray-900'
-                                    }`}
+                                          </Text>
+                                        ) : null
+                                      }
+                                    />
+                                    <Text
+                                      strong
+                                      delete={bill.isPaid || (bill.type === 'income' && bill.isReceived)}
+                                      style={{
+                                        fontSize: '14px',
+                                        color: bill.isPaid || (bill.type === 'income' && bill.isReceived)
+                                          ? '#9ca3af'
+                                          : bill.type === 'income'
+                                          ? '#16a34a'
+                                          : '#dc2626',
+                                      }}
                                   >
+                                    {bill.type === 'income' ? '+' : '-'}
                                     {formatCurrency(bill.amount)}
-                                  </p>
-                                </div>
-                              ))}
-                            </div>
+                                    </Text>
+                                  </List.Item>
+                                );
+                              }}
+                            />
                           </div>
                         );
                       })}
-                  </div>
-                </div>
+                  </Space>
+                </Card>
               );
             })}
 
           {Object.keys(billsByMonth).filter(
             (monthKey) => billsByMonth[monthKey].length > 0
           ).length === 0 && (
-            <div className="bg-white p-12 rounded-lg shadow text-center">
-              <p className="text-gray-500 text-lg">
-                No upcoming bills in the next 12 months
-              </p>
-            </div>
+            <Card>
+              <Empty description="No upcoming bills in the next 12 months" />
+            </Card>
           )}
-        </div>
+        </Space>
       )}
 
       {/* Confirmation Modal */}
       <Modal
-        isOpen={pendingBill !== null}
-        onClose={handleCancelPaid}
+        open={pendingBill !== null}
+        onCancel={handleCancelPaid}
+        onOk={handleConfirmPaid}
         title="Mark Bill as Paid"
+        okText="Confirm Payment"
+        cancelText="Cancel"
       >
         {pendingBill && (
-          <div className="space-y-4">
-            <div className="bg-yellow-50 border border-yellow-200 rounded-md p-4">
-              <div className="flex">
-                <div className="flex-shrink-0">
-                  <svg
-                    className="h-5 w-5 text-yellow-400"
-                    viewBox="0 0 20 20"
-                    fill="currentColor"
-                  >
-                    <path
-                      fillRule="evenodd"
-                      d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z"
-                      clipRule="evenodd"
-                    />
-                  </svg>
-                </div>
-                <div className="ml-3">
-                  <h3 className="text-sm font-medium text-yellow-800">
-                    Confirm Payment
-                  </h3>
-                  <div className="mt-2 text-sm text-yellow-700">
-                    <p>
-                      Are you sure you want to mark this bill as paid? This will
-                      create an expense record with today's date.
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-gray-50 rounded-md p-4">
-              <dl className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div>
-                  <dt className="text-sm font-medium text-gray-500">
-                    Bill Name
-                  </dt>
-                  <dd className="mt-1 text-sm text-gray-900">
+          <Space direction="vertical" size="large" style={{ width: '100%' }}>
+            <Alert
+              message="Confirm Payment"
+              description="Are you sure you want to mark this bill as paid? This will create an expense record with today's date."
+              type="warning"
+              showIcon
+            />
+            <Descriptions column={2} bordered size="small">
+              <Descriptions.Item label="Bill Name">
                     {pendingBill.bill.name}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="text-sm font-medium text-gray-500">Amount</dt>
-                  <dd className="mt-1 text-sm text-gray-900">
+              </Descriptions.Item>
+              <Descriptions.Item label="Amount">
                     {formatCurrency(pendingBill.bill.amount)}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="text-sm font-medium text-gray-500">
-                    Due Month
-                  </dt>
-                  <dd className="mt-1 text-sm text-gray-900">
+              </Descriptions.Item>
+              <Descriptions.Item label="Due Month">
                     {monthNames[pendingBill.month]} {pendingBill.year}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="text-sm font-medium text-gray-500">
-                    Payment Date
-                  </dt>
-                  <dd className="mt-1 text-sm text-gray-900">
+              </Descriptions.Item>
+              <Descriptions.Item label="Payment Date">
                     {new Date().toLocaleDateString('en-US', {
                       year: 'numeric',
                       month: 'long',
                       day: 'numeric',
                     })}
-                  </dd>
-                </div>
-              </dl>
-            </div>
-
-            <div className="flex justify-end gap-3 pt-4">
-              <button
-                type="button"
-                onClick={handleCancelPaid}
-                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleConfirmPaid}
-                className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 border border-transparent rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-              >
-                Confirm Payment
-              </button>
-            </div>
-          </div>
+              </Descriptions.Item>
+            </Descriptions>
+          </Space>
         )}
       </Modal>
 
       {/* Confirmation Modal for Marking Income as Received */}
       <Modal
-        isOpen={pendingIncome !== null}
-        onClose={handleCancelIncomeReceived}
+        open={pendingIncome !== null}
+        onCancel={handleCancelIncomeReceived}
+        onOk={handleConfirmIncomeReceived}
         title="Mark Income as Received"
+        okText="Confirm Received"
+        cancelText="Cancel"
       >
         {pendingIncome && (
-          <div className="space-y-4">
-            <div className="bg-yellow-50 border border-yellow-200 rounded-md p-4">
-              <div className="flex">
-                <div className="flex-shrink-0">
-                  <svg
-                    className="h-5 w-5 text-yellow-400"
-                    viewBox="0 0 20 20"
-                    fill="currentColor"
-                  >
-                    <path
-                      fillRule="evenodd"
-                      d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z"
-                      clipRule="evenodd"
-                    />
-                  </svg>
-                </div>
-                <div className="ml-3">
-                  <h3 className="text-sm font-medium text-yellow-800">
-                    Confirm Income Received
-                  </h3>
-                  <div className="mt-2 text-sm text-yellow-700">
-                    <p>
-                      Are you sure you want to mark this income as received?
-                      This will update your cash on hand.
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-gray-50 rounded-md p-4">
-              <dl className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div>
-                  <dt className="text-sm font-medium text-gray-500">
-                    Income Name
-                  </dt>
-                  <dd className="mt-1 text-sm text-gray-900">
+          <Space direction="vertical" size="large" style={{ width: '100%' }}>
+            <Alert
+              message="Confirm Income Received"
+              description="Are you sure you want to mark this income as received? This will update your cash on hand."
+              type="warning"
+              showIcon
+            />
+            <Descriptions column={2} bordered size="small">
+              <Descriptions.Item label="Income Name">
                     {pendingIncome.income.name}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="text-sm font-medium text-gray-500">Amount</dt>
-                  <dd className="mt-1 text-sm text-gray-900">
+              </Descriptions.Item>
+              <Descriptions.Item label="Amount">
                     {formatCurrency(pendingIncome.income.amount)}
-                  </dd>
-                </div>
-              </dl>
-            </div>
-
-            <div className="flex justify-end space-x-3">
-              <button
-                type="button"
-                onClick={handleCancelIncomeReceived}
-                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleConfirmIncomeReceived}
-                className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 border border-transparent rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-              >
-                Confirm Received
-              </button>
-            </div>
-          </div>
+              </Descriptions.Item>
+            </Descriptions>
+          </Space>
         )}
       </Modal>
-    </div>
+
+      <Modal
+        title="Edit Cash on Hand"
+        open={isEditCashModalOpen}
+        onCancel={() => {
+          setIsEditCashModalOpen(false);
+          cashForm.resetFields();
+        }}
+        onOk={async () => {
+          try {
+            const values = await cashForm.validateFields();
+            updateProfile(
+              { current_cash: values.current_cash },
+              {
+                onSuccess: () => {
+                  message.success('Cash on hand updated successfully');
+                  setIsEditCashModalOpen(false);
+                  cashForm.resetFields();
+                },
+                onError: (error: Error) => {
+                  message.error('Error updating cash: ' + (error instanceof Error ? error.message : 'Unknown error'));
+                },
+              }
+            );
+          } catch (error) {
+            // Form validation errors are handled by Ant Design
+          }
+        }}
+        confirmLoading={isUpdatingProfile}
+        okText="Update"
+        cancelText="Cancel"
+      >
+        <Form
+          form={cashForm}
+          layout="vertical"
+        >
+          <Form.Item
+            name="current_cash"
+            label="Cash on Hand (₱)"
+            rules={[
+              { required: true, message: 'Please enter the cash amount' },
+              { type: 'number', min: 0, message: 'Cash amount must be 0 or greater' },
+            ]}
+          >
+            <InputNumber
+              style={{ width: '100%' }}
+              prefix="₱"
+              step={0.01}
+              min={0}
+              placeholder="0.00"
+            />
+          </Form.Item>
+        </Form>
+      </Modal>
+    </Space>
   );
 }

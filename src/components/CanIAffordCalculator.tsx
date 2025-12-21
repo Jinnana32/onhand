@@ -1,84 +1,72 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
+import { Card, InputNumber, Space, Typography, Tag } from 'antd'
 import { useFinancialSummary } from '../hooks'
 import { formatCurrency } from '../lib/utils'
 
+const { Title, Text } = Typography
+
 export function CanIAffordCalculator() {
-  const [amount, setAmount] = useState('')
+  const [amount, setAmount] = useState<number | null>(null)
   const { summary } = useFinancialSummary()
 
-  const purchaseAmount = parseFloat(amount) || 0
+  const purchaseAmount = amount || 0
   const canAfford =
     summary && purchaseAmount > 0
       ? summary.availableCash + summary.netCashFlow >= purchaseAmount
       : null
 
   return (
-    <div className="bg-white p-6 rounded-lg shadow">
-      <h3 className="text-lg font-semibold text-gray-900 mb-4">Can I Afford This?</h3>
-      <div className="flex flex-col sm:flex-row gap-4">
-        <div className="flex-1">
-          <label htmlFor="amount" className="block text-sm font-medium text-gray-700 mb-2">
-            Purchase Amount (₱)
-          </label>
-          <div className="flex gap-2">
-            <input
-              id="amount"
-              type="number"
-              step="0.01"
-              min="0"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              placeholder="0.00"
-              className="flex-1 px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
-            />
-          </div>
-        </div>
+    <Card title="Can I Afford This?">
+      <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+        <InputNumber
+          style={{ width: '100%' }}
+          prefix="₱"
+          placeholder="0.00"
+          step={0.01}
+          min={0}
+          value={amount}
+          onChange={(value) => setAmount(value)}
+          size="large"
+        />
         {purchaseAmount > 0 && summary && (
-          <div className="flex items-center">
-            <div
-              className={`px-4 py-3 rounded-md ${
-                canAfford
-                  ? 'bg-green-50 border border-green-200'
-                  : 'bg-red-50 border border-red-200'
-              }`}
-            >
-              <div className="text-sm font-medium text-gray-700">Available Budget:</div>
-              <div
-                className={`text-xl font-bold ${
-                  canAfford ? 'text-green-700' : 'text-red-700'
-                }`}
-              >
-                {formatCurrency(summary.availableCash + summary.netCashFlow)}
-              </div>
-              <div className="text-xs text-gray-600 mt-1">
-                {canAfford ? (
-                  <span className="text-green-700">✓ You can afford this!</span>
-                ) : (
-                  <span className="text-red-700">
-                    ✗ Short by {formatCurrency(purchaseAmount - (summary.availableCash + summary.netCashFlow))}
-                  </span>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-      {summary && (
-        <div className="mt-4 flex justify-between items-center">
-          <p className="text-xs text-gray-500">
-            Available Cash: {formatCurrency(summary.availableCash)} | Net Cash Flow:{' '}
-            {formatCurrency(summary.netCashFlow)}
-          </p>
-          <Link
-            to="/calculator"
-            className="text-xs text-indigo-600 hover:text-indigo-700 font-medium"
+          <Card
+            size="small"
+            style={{
+              backgroundColor: canAfford ? '#f0fdf4' : '#fef2f2',
+              borderColor: canAfford ? '#22c55e' : '#ef4444',
+            }}
           >
-            View Detailed Calculator →
-          </Link>
-        </div>
-      )}
-    </div>
+            <Space direction="vertical" size="small" style={{ width: '100%' }}>
+              <Text type="secondary" style={{ fontSize: '12px' }}>Available Budget:</Text>
+              <Title level={4} style={{ margin: 0, color: canAfford ? '#16a34a' : '#dc2626' }}>
+                {formatCurrency(summary.availableCash + summary.netCashFlow)}
+              </Title>
+              {canAfford ? (
+                <Tag color="success">✓ You can afford this!</Tag>
+              ) : (
+                <Tag color="error">
+                  ✗ Short by {formatCurrency(purchaseAmount - (summary.availableCash + summary.netCashFlow))}
+                </Tag>
+              )}
+            </Space>
+          </Card>
+        )}
+        {summary && (
+          <Space split="|" style={{ fontSize: '12px', color: '#6b7280' }}>
+            <Text type="secondary" style={{ fontSize: '12px' }}>
+              Available Cash: {formatCurrency(summary.availableCash)}
+            </Text>
+            <Text type="secondary" style={{ fontSize: '12px' }}>
+              Net Cash Flow: {formatCurrency(summary.netCashFlow)}
+            </Text>
+            <Link to="/calculator" style={{ fontSize: '12px' }}>
+              View Detailed Calculator →
+            </Link>
+          </Space>
+        )}
+      </Space>
+    </Card>
   )
 }
 

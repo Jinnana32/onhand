@@ -1,8 +1,33 @@
 import { useState } from 'react'
+import {
+  Table,
+  Button,
+  Modal,
+  Form,
+  Input,
+  InputNumber,
+  Select,
+  DatePicker,
+  Switch,
+  Typography,
+  Space,
+  Tag,
+  Popconfirm,
+  message,
+  Empty,
+  Card,
+  Skeleton,
+  Row,
+  Col,
+} from 'antd'
+import { PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons'
+import dayjs, { Dayjs } from 'dayjs'
 import { useIncomeSources } from '../hooks'
 import { IncomeSource } from '../types/database.types'
 import { formatCurrency, formatDate } from '../lib/utils'
-import { Modal } from '../components/Modal'
+
+const { Title, Text } = Typography
+const { Option } = Select
 
 export function Income() {
   const {
@@ -15,41 +40,31 @@ export function Income() {
     isUpdating,
   } = useIncomeSources()
 
+  const [form] = Form.useForm()
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [editingIncome, setEditingIncome] = useState<IncomeSource | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
 
-  const [formData, setFormData] = useState({
-    name: '',
-    amount: '',
-    frequency: 'monthly' as IncomeSource['frequency'],
-    category: 'salary' as IncomeSource['category'],
-    next_payment_date: '',
-    payment_date: '',
-    isReceived: false, // For one-time payments
-  })
-
   const handleOpenModal = (income?: IncomeSource) => {
     if (income) {
       setEditingIncome(income)
-      setFormData({
+      form.setFieldsValue({
         name: income.name,
-        amount: income.amount.toString(),
+        amount: income.amount,
         frequency: income.frequency,
         category: income.category,
-        next_payment_date: income.next_payment_date || '',
-        payment_date: income.payment_date || '',
+        next_payment_date: income.next_payment_date
+          ? dayjs(income.next_payment_date)
+          : undefined,
+        payment_date: income.payment_date ? dayjs(income.payment_date) : undefined,
         isReceived: income.is_received || false,
       })
     } else {
       setEditingIncome(null)
-      setFormData({
-        name: '',
-        amount: '',
+      form.resetFields()
+      form.setFieldsValue({
         frequency: 'monthly',
         category: 'salary',
-        next_payment_date: '',
-        payment_date: '',
         isReceived: false,
       })
     }
@@ -59,99 +74,111 @@ export function Income() {
   const handleCloseModal = () => {
     setIsModalOpen(false)
     setEditingIncome(null)
-    setFormData({
-      name: '',
-      amount: '',
-      frequency: 'monthly',
-      category: 'salary',
-      next_payment_date: '',
-      payment_date: '',
-      isReceived: false,
-    })
+    form.resetFields()
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    const amount = parseFloat(formData.amount)
-    if (isNaN(amount) || amount <= 0) {
-      alert('Please enter a valid amount')
-      return
-    }
+  const handleSubmit = async () => {
+    try {
+      const values = await form.validateFields()
+      const amount = values.amount
 
-    // For one-time payments: if received, set payment_date to today and next_payment_date to today
-    // If not received, use next_payment_date as the expected date
-    let next_payment_date: string | null = null
-    let payment_date: string | null = null
-    let is_received: boolean = false
-
-    if (formData.frequency === 'one_time') {
-      is_received = formData.isReceived
-      if (formData.isReceived) {
-        // Received: set both to today
-        const today = new Date().toISOString().split('T')[0]
-        payment_date = today
-        next_payment_date = today
-      } else {
-        // Not received: use next_payment_date as expected date
-        next_payment_date = formData.next_payment_date || null
-        payment_date = null
+      if (isNaN(amount) || amount <= 0) {
+        message.error('Please enter a valid amount')
+        return
       }
-    } else {
-      // For recurring payments, use the existing logic
-      next_payment_date = formData.next_payment_date || null
-      payment_date = null
-      is_received = false
-    }
 
-    const input = {
-      name: formData.name,
-      amount,
-      frequency: formData.frequency,
-      category: formData.category,
-      next_payment_date,
-      payment_date,
-      is_received,
-    }
+      // For one-time payments: if received, set payment_date to today and next_payment_date to today
+      // If not received, use next_payment_date as the expected date
+      let next_payment_date: string | null = null
+      let payment_date: string | null = null
+      let is_received: boolean = false
 
-    if (editingIncome) {
-      updateIncomeSource(
-        {
-          id: editingIncome.id,
-          updates: input,
-        },
-        {
+      if (values.frequency === 'one_time') {
+        is_received = values.isReceived
+        if (values.isReceived) {
+          // Received: set both to today
+          const today = new Date().toISOString().split('T')[0]
+          payment_date = today
+          next_payment_date = today
+        } else {
+          // Not received: use next_payment_date as expected date
+          next_payment_date = values.next_payment_date
+            ? (values.next_payment_date as Dayjs).format('YYYY-MM-DD')
+            : null
+          payment_date = null
+        }
+      } else {
+        // For recurring payments, use the existing logic
+        next_payment_date = values.next_payment_date
+          ? (values.next_payment_date as Dayjs).format('YYYY-MM-DD')
+          : null
+        payment_date = null
+        is_received = false
+      }
+
+      const input = {
+        name: values.name,
+        amount,
+        frequency: values.frequency,
+        category: values.category,
+        next_payment_date,
+        payment_date,
+        is_received,
+      }
+
+      if (editingIncome) {
+        updateIncomeSource(
+          {
+            id: editingIncome.id,
+            updates: input,
+          },
+          {
+            onSuccess: () => {
+              message.success('Income source updated successfully')
+              handleCloseModal()
+            },
+            onError: (error: Error) => {
+              message.error(
+                'Error updating income source: ' +
+                  (error instanceof Error ? error.message : 'Unknown error')
+              )
+            },
+          }
+        )
+      } else {
+        createIncomeSource(input, {
           onSuccess: () => {
+            message.success('Income source created successfully')
             handleCloseModal()
           },
           onError: (error: Error) => {
-            alert('Error updating income source: ' + (error instanceof Error ? error.message : 'Unknown error'))
+            message.error(
+              'Error creating income source: ' +
+                (error instanceof Error ? error.message : 'Unknown error')
+            )
           },
-        }
-      )
-    } else {
-      createIncomeSource(input, {
-        onSuccess: () => {
-          handleCloseModal()
-        },
-        onError: (error: Error) => {
-          alert('Error creating income source: ' + (error instanceof Error ? error.message : 'Unknown error'))
-        },
-      })
+        })
+      }
+    } catch (error) {
+      // Form validation errors are handled by Ant Design
     }
   }
 
   const handleDelete = (id: string) => {
-    if (window.confirm('Are you sure you want to delete this income source?')) {
-      deleteIncomeSource(id, {
-        onSuccess: () => {
-          setDeletingId(null)
-        },
-        onError: (error: Error) => {
-          alert('Error deleting income source: ' + (error instanceof Error ? error.message : 'Unknown error'))
-          setDeletingId(null)
-        },
-      })
-    }
+    setDeletingId(id)
+    deleteIncomeSource(id, {
+      onSuccess: () => {
+        message.success('Income source deleted successfully')
+        setDeletingId(null)
+      },
+      onError: (error: Error) => {
+        message.error(
+          'Error deleting income source: ' +
+            (error instanceof Error ? error.message : 'Unknown error')
+        )
+        setDeletingId(null)
+      },
+    })
   }
 
   const handleToggleActive = (income: IncomeSource) => {
@@ -161,292 +188,294 @@ export function Income() {
         updates: { is_active: !income.is_active },
       },
       {
+        onSuccess: () => {
+          message.success(
+            `Income source ${!income.is_active ? 'activated' : 'deactivated'} successfully`
+          )
+        },
         onError: (error: Error) => {
-          alert('Error updating income source: ' + (error instanceof Error ? error.message : 'Unknown error'))
+          message.error(
+            'Error updating income source: ' +
+              (error instanceof Error ? error.message : 'Unknown error')
+          )
         },
       }
     )
   }
 
+  const columns = [
+    {
+      title: 'Name',
+      dataIndex: 'name',
+      key: 'name',
+      render: (_: unknown, income: IncomeSource) => (
+        <Text strong={income.is_active} delete={!income.is_active}>
+          {income.name}
+        </Text>
+      ),
+    },
+    {
+      title: 'Amount',
+      key: 'amount',
+      render: (_: unknown, income: IncomeSource) => (
+        <Text>{formatCurrency(income.amount)}</Text>
+      ),
+    },
+    {
+      title: 'Category',
+      key: 'category',
+      render: (_: unknown, income: IncomeSource) => (
+        <Tag color="blue">{income.category}</Tag>
+      ),
+    },
+    {
+      title: 'Frequency',
+      key: 'frequency',
+      render: (_: unknown, income: IncomeSource) => (
+        <Tag color="cyan">{income.frequency}</Tag>
+      ),
+    },
+    {
+      title: 'Next Payment',
+      key: 'next_payment',
+      render: (_: unknown, income: IncomeSource) => (
+        <Text type="secondary">
+          {income.next_payment_date
+            ? formatDate(income.next_payment_date)
+            : income.payment_date
+            ? formatDate(income.payment_date)
+            : 'N/A'}
+        </Text>
+      ),
+    },
+    {
+      title: 'Status',
+      key: 'status',
+      render: (_: unknown, income: IncomeSource) => (
+        <Tag color={income.is_active ? 'success' : 'default'}>
+          {income.is_active ? 'Active' : 'Inactive'}
+        </Tag>
+      ),
+    },
+    {
+      title: 'Actions',
+      key: 'actions',
+      render: (_: unknown, income: IncomeSource) => (
+        <Space>
+          <Button
+            type="link"
+            size="small"
+            onClick={() => handleToggleActive(income)}
+          >
+            {income.is_active ? 'Deactivate' : 'Activate'}
+          </Button>
+          <Button
+            type="link"
+            icon={<EditOutlined />}
+            onClick={() => handleOpenModal(income)}
+          >
+            Edit
+          </Button>
+          <Popconfirm
+            title="Delete income source"
+            description="Are you sure you want to delete this income source?"
+            onConfirm={() => handleDelete(income.id)}
+            okText="Yes"
+            cancelText="No"
+          >
+            <Button
+              type="link"
+              danger
+              icon={<DeleteOutlined />}
+              loading={deletingId === income.id}
+            >
+              Delete
+            </Button>
+          </Popconfirm>
+        </Space>
+      ),
+    },
+  ]
+
   if (isLoading) {
     return (
       <div>
-        <h2 className="text-2xl font-bold text-gray-900 mb-6">Income Sources</h2>
-        <div className="animate-pulse">Loading...</div>
+        <Title level={2} style={{ marginBottom: 24 }}>Income Sources</Title>
+        <Card>
+          <Skeleton active />
+        </Card>
       </div>
     )
   }
 
   return (
     <div>
-      <div className="flex justify-between items-center mb-6">
-        <h2 className="text-2xl font-bold text-gray-900">Income Sources</h2>
-        <button
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginBottom: 24,
+        }}
+      >
+        <Title level={2} style={{ margin: 0 }}>Income Sources</Title>
+        <Button
+          type="primary"
+          icon={<PlusOutlined />}
           onClick={() => handleOpenModal()}
-          className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+          size="large"
         >
-          + Add Income Source
-        </button>
+          Add Income Source
+        </Button>
       </div>
 
       {incomeSources.length === 0 ? (
-        <div className="bg-white rounded-lg shadow p-12 text-center">
-          <p className="text-gray-500 mb-4">No income sources yet.</p>
-          <button
-            onClick={() => handleOpenModal()}
-            className="text-indigo-600 hover:text-indigo-700 font-medium"
-          >
-            Add your first income source
-          </button>
-        </div>
+        <Card>
+          <Empty
+            description={
+              <div>
+                <p>No income sources yet.</p>
+                <Button
+                  type="link"
+                  onClick={() => handleOpenModal()}
+                  style={{ marginTop: 8 }}
+                >
+                  Add your first income source
+                </Button>
+              </div>
+            }
+          />
+        </Card>
       ) : (
-        <div className="bg-white rounded-lg shadow overflow-hidden">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Name
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Amount
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Category
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Frequency
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Next Payment
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Status
-                </th>
-                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Actions
-                </th>
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {incomeSources.map((income) => (
-                <tr key={income.id} className={!income.is_active ? 'opacity-50' : ''}>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm font-medium text-gray-900">{income.name}</div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm text-gray-900">{formatCurrency(income.amount)}</div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <span className="px-2 py-1 text-xs font-medium bg-indigo-100 text-indigo-800 rounded">
-                      {income.category}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <span className="px-2 py-1 text-xs font-medium bg-blue-100 text-blue-800 rounded">
-                      {income.frequency}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {income.next_payment_date
-                      ? formatDate(income.next_payment_date)
-                      : income.payment_date
-                      ? formatDate(income.payment_date)
-                      : 'N/A'}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <button
-                      onClick={() => handleToggleActive(income)}
-                      className={`px-2 py-1 text-xs font-medium rounded ${
-                        income.is_active
-                          ? 'bg-green-100 text-green-800'
-                          : 'bg-gray-100 text-gray-800'
-                      }`}
-                    >
-                      {income.is_active ? 'Active' : 'Inactive'}
-                    </button>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                    <button
-                      onClick={() => handleOpenModal(income)}
-                      className="text-indigo-600 hover:text-indigo-900 mr-4"
-                    >
-                      Edit
-                    </button>
-                    <button
-                      onClick={() => handleDelete(income.id)}
-                      disabled={deletingId === income.id}
-                      className="text-red-600 hover:text-red-900 disabled:opacity-50"
-                    >
-                      {deletingId === income.id ? 'Deleting...' : 'Delete'}
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <Card>
+          <Table
+            columns={columns}
+            dataSource={incomeSources}
+            rowKey="id"
+            pagination={{
+              pageSize: 10,
+              showSizeChanger: true,
+              showTotal: (total) => `Total ${total} income sources`,
+            }}
+            scroll={{ x: 'max-content' }}
+            rowClassName={(record) =>
+              !record.is_active ? 'ant-table-row-disabled' : ''
+            }
+          />
+        </Card>
       )}
 
       <Modal
-        isOpen={isModalOpen}
-        onClose={handleCloseModal}
         title={editingIncome ? 'Edit Income Source' : 'Add Income Source'}
+        open={isModalOpen}
+        onCancel={handleCloseModal}
+        onOk={handleSubmit}
+        confirmLoading={isCreating || isUpdating}
+        okText={editingIncome ? 'Update' : 'Create'}
+        cancelText="Cancel"
+        width={600}
       >
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label htmlFor="name" className="block text-sm font-medium text-gray-700">
-              Name
-            </label>
-            <input
-              type="text"
-              id="name"
-              required
-              value={formData.name}
-              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-              className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
-              placeholder="e.g., Salary, Freelance Project"
-            />
-          </div>
+        <Form form={form} layout="vertical" onFinish={handleSubmit}>
+          <Form.Item
+            name="name"
+            label="Name"
+            rules={[{ required: true, message: 'Please enter a name' }]}
+          >
+            <Input placeholder="e.g., Salary, Freelance Project" />
+          </Form.Item>
 
-          <div>
-            <label htmlFor="amount" className="block text-sm font-medium text-gray-700">
-              Amount (₱)
-            </label>
-            <input
-              type="number"
-              id="amount"
-              required
-              step="0.01"
-              min="0"
-              value={formData.amount}
-              onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
-              className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+          <Form.Item
+            name="amount"
+            label="Amount (₱)"
+            rules={[
+              { required: true, message: 'Please enter an amount' },
+              { type: 'number', min: 0.01, message: 'Amount must be greater than 0' },
+            ]}
+          >
+            <InputNumber
+              style={{ width: '100%' }}
+              prefix="₱"
+              step={0.01}
+              min={0}
               placeholder="0.00"
             />
-          </div>
+          </Form.Item>
 
-          <div>
-            <label htmlFor="category" className="block text-sm font-medium text-gray-700">
-              Category
-            </label>
-            <select
-              id="category"
-              required
-              value={formData.category}
-              onChange={(e) =>
-                setFormData({
-                  ...formData,
-                  category: e.target.value as IncomeSource['category'],
-                })
+          <Row gutter={16}>
+            <Col xs={24} sm={12}>
+              <Form.Item
+                name="category"
+                label="Category"
+                rules={[{ required: true, message: 'Please select a category' }]}
+              >
+                <Select>
+                  <Option value="salary">Salary</Option>
+                  <Option value="project">Project</Option>
+                  <Option value="other">Other</Option>
+                </Select>
+              </Form.Item>
+            </Col>
+            <Col xs={24} sm={12}>
+              <Form.Item
+                name="frequency"
+                label="Frequency"
+                rules={[{ required: true, message: 'Please select a frequency' }]}
+              >
+                <Select>
+                  <Option value="monthly">Monthly</Option>
+                  <Option value="weekly">Weekly</Option>
+                  <Option value="one_time">One Time</Option>
+                </Select>
+              </Form.Item>
+            </Col>
+          </Row>
+
+          <Form.Item
+            noStyle
+            shouldUpdate={(prevValues, currentValues) =>
+              prevValues.frequency !== currentValues.frequency
+            }
+          >
+            {({ getFieldValue }) => {
+              const frequency = getFieldValue('frequency')
+              if (frequency !== 'one_time') {
+                return (
+                  <Form.Item
+                    name="next_payment_date"
+                    label="Next Payment Date"
+                    rules={[
+                      { required: true, message: 'Please select a next payment date' },
+                    ]}
+                  >
+                    <DatePicker style={{ width: '100%' }} />
+                  </Form.Item>
+                )
               }
-              className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
-            >
-              <option value="salary">Salary</option>
-              <option value="project">Project</option>
-              <option value="other">Other</option>
-            </select>
-          </div>
-
-          <div>
-            <label htmlFor="frequency" className="block text-sm font-medium text-gray-700">
-              Frequency
-            </label>
-            <select
-              id="frequency"
-              required
-              value={formData.frequency}
-              onChange={(e) =>
-                setFormData({
-                  ...formData,
-                  frequency: e.target.value as IncomeSource['frequency'],
-                })
-              }
-              className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
-            >
-              <option value="monthly">Monthly</option>
-              <option value="weekly">Weekly</option>
-              <option value="one_time">One Time</option>
-            </select>
-          </div>
-
-          {formData.frequency !== 'one_time' && (
-            <div>
-              <label htmlFor="next_payment_date" className="block text-sm font-medium text-gray-700">
-                Next Payment Date
-              </label>
-              <input
-                type="date"
-                id="next_payment_date"
-                value={formData.next_payment_date}
-                onChange={(e) => setFormData({ ...formData, next_payment_date: e.target.value })}
-                className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
-              />
-            </div>
-          )}
-
-          {formData.frequency === 'one_time' && (
-            <>
-              <div className="flex items-center">
-                <input
-                  type="checkbox"
-                  id="isReceived"
-                  checked={formData.isReceived}
-                  onChange={(e) => {
-                    const isReceived = e.target.checked
-                    setFormData({
-                      ...formData,
-                      isReceived,
-                      // If checked, automatically set next_payment_date to today
-                      next_payment_date: isReceived
-                        ? new Date().toISOString().split('T')[0]
-                        : formData.next_payment_date,
-                    })
-                  }}
-                  className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
-                />
-                <label htmlFor="isReceived" className="ml-2 block text-sm font-medium text-gray-700">
-                  Received
-                </label>
-              </div>
-
-              {!formData.isReceived && (
-                <div>
-                  <label htmlFor="next_payment_date" className="block text-sm font-medium text-gray-700">
-                    Expected Payment Date
-                  </label>
-                  <input
-                    type="date"
-                    id="next_payment_date"
-                    value={formData.next_payment_date}
-                    onChange={(e) => setFormData({ ...formData, next_payment_date: e.target.value })}
-                    className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
-                  />
-                </div>
-              )}
-            </>
-          )}
-
-          <div className="flex justify-end gap-3 pt-4">
-            <button
-              type="button"
-              onClick={handleCloseModal}
-              className="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={isCreating || isUpdating}
-              className="px-4 py-2 bg-indigo-600 text-white rounded-md text-sm font-medium hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50"
-            >
-              {isCreating || isUpdating
-                ? 'Saving...'
-                : editingIncome
-                ? 'Update'
-                : 'Create'}
-            </button>
-          </div>
-        </form>
+              return (
+                <>
+                  <Form.Item
+                    name="isReceived"
+                    valuePropName="checked"
+                    label="Received"
+                  >
+                    <Switch />
+                  </Form.Item>
+                  {!getFieldValue('isReceived') && (
+                    <Form.Item
+                      name="next_payment_date"
+                      label="Expected Payment Date"
+                      rules={[
+                        { required: true, message: 'Please select an expected payment date' },
+                      ]}
+                    >
+                      <DatePicker style={{ width: '100%' }} />
+                    </Form.Item>
+                  )}
+                </>
+              )
+            }}
+          </Form.Item>
+        </Form>
       </Modal>
     </div>
   )

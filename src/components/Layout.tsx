@@ -1,212 +1,210 @@
-import { ReactNode, useState } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { ReactNode, useState, useEffect } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
+import { Layout as AntLayout, Menu, Drawer, Button } from 'antd';
+import { 
+  DashboardOutlined, 
+  CalculatorOutlined, 
+  DollarOutlined, 
+  CreditCardOutlined, 
+  FileTextOutlined, 
+  WalletOutlined, 
+  ShoppingOutlined, 
+  RobotOutlined,
+  MenuOutlined,
+  LogoutOutlined
+} from '@ant-design/icons';
 import { supabase } from '../lib/supabase';
+
+const { Header, Sider, Content } = AntLayout;
+
+// Simple hook to detect mobile (lg breakpoint is 992px in Ant Design)
+function useIsMobile() {
+  const [isMobile, setIsMobile] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return window.innerWidth < 992;
+  });
+
+  // This useEffect is necessary for responsive layout detection (external system: browser window)
+  // It's a legitimate use case per the project rules
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth < 992);
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  return isMobile;
+}
 
 interface LayoutProps {
   children: ReactNode;
 }
 
 const navigation = [
-  { name: 'Dashboard', href: '/', icon: '📊' },
-  { name: 'Calculator', href: '/calculator', icon: '🧮' },
-  { name: 'Cash Flow', href: '/cash-flow', icon: '💰' },
-  { name: 'Credit Cards', href: '/credit-cards', icon: '💳' },
-  { name: 'Liabilities', href: '/liabilities', icon: '📋' },
-  { name: 'Income', href: '/income', icon: '💰' },
-  { name: 'Expenses', href: '/expenses', icon: '🛒' },
-  { name: 'AI Assistant', href: '/assistant', icon: '🤖' },
+  { name: 'Dashboard', href: '/', icon: DashboardOutlined },
+  { name: 'Calculator', href: '/calculator', icon: CalculatorOutlined },
+  { name: 'Cash Flow', href: '/cash-flow', icon: DollarOutlined },
+  { name: 'Credit Cards', href: '/credit-cards', icon: CreditCardOutlined },
+  { name: 'Liabilities', href: '/liabilities', icon: FileTextOutlined },
+  { name: 'Income', href: '/income', icon: WalletOutlined },
+  { name: 'Expenses', href: '/expenses', icon: ShoppingOutlined },
+  { name: 'AI Assistant', href: '/assistant', icon: RobotOutlined },
 ];
 
 export function Layout({ children }: LayoutProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const isMobile = useIsMobile();
 
   const handleSignOut = async () => {
     await supabase.auth.signOut();
     navigate('/auth');
   };
 
-  const handleLinkClick = () => {
-    setMobileMenuOpen(false);
-  };
+  const menuItems = navigation.map((item) => ({
+    key: item.href,
+    icon: <item.icon />,
+    label: item.name,
+    onClick: () => {
+      navigate(item.href);
+      setMobileMenuOpen(false);
+    },
+  }));
+
+  const selectedKeys = [location.pathname];
 
   return (
-    <div className="min-h-screen bg-gray-50 flex">
+    <AntLayout style={{ minHeight: '100vh' }}>
       {/* Desktop Sidebar */}
-      <aside className="hidden lg:flex lg:flex-shrink-0">
-        <div className="flex flex-col w-64">
-          <div className="flex flex-col flex-grow bg-white border-r border-gray-200 pt-5 pb-4 overflow-y-auto">
-            <div className="flex items-center flex-shrink-0 px-4">
-              <h1 className="text-xl font-bold text-gray-900">OnHands</h1>
-            </div>
-            <div className="mt-5 flex-grow flex flex-col">
-              <nav className="flex-1 px-2 space-y-1">
-                {navigation.map((item) => {
-                  const isActive = location.pathname === item.href;
-                  return (
-                    <Link
-                      key={item.name}
-                      to={item.href}
-                      className={`${
-                        isActive
-                          ? 'bg-indigo-50 text-indigo-700 border-indigo-500'
-                          : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
-                      } group flex items-center px-3 py-2 text-sm font-medium border-l-4 border-transparent`}
-                    >
-                      <span className="mr-3 text-lg">{item.icon}</span>
-                      {item.name}
-                    </Link>
-                  );
-                })}
-              </nav>
-              <div className="flex-shrink-0 flex border-t border-gray-200 p-4">
-                <button
-                  onClick={handleSignOut}
-                  className="flex-shrink-0 w-full group block"
-                >
-                  <div className="flex items-center">
-                    <div className="ml-3">
-                      <p className="text-sm font-medium text-gray-700 group-hover:text-gray-900">
-                        Sign Out
-                      </p>
-                    </div>
-                  </div>
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </aside>
-
-      {/* Mobile Drawer Overlay */}
-      {mobileMenuOpen && (
-        <div
-          className="fixed inset-0 z-40 lg:hidden"
-          onClick={() => setMobileMenuOpen(false)}
+      {!isMobile && (
+        <Sider
+          width={256}
+          theme="light"
+          style={{
+            overflow: 'auto',
+            height: '100vh',
+            position: 'fixed',
+            left: 0,
+            top: 0,
+            bottom: 0,
+          }}
         >
-          <div className="fixed inset-0 bg-gray-600 bg-opacity-75" />
+        <div style={{ padding: '16px', borderBottom: '1px solid #f0f0f0' }}>
+          <h1 style={{ margin: 0, fontSize: '20px', fontWeight: 'bold', color: '#1f2937' }}>
+            OnHands
+          </h1>
         </div>
+        <Menu
+          mode="inline"
+          selectedKeys={selectedKeys}
+          items={menuItems}
+          style={{ borderRight: 0, height: 'calc(100vh - 73px)' }}
+        />
+        <div style={{ padding: '16px', borderTop: '1px solid #f0f0f0' }}>
+          <Button
+            type="text"
+            icon={<LogoutOutlined />}
+            onClick={handleSignOut}
+            block
+            style={{ textAlign: 'left' }}
+          >
+            Sign Out
+          </Button>
+        </div>
+      </Sider>
       )}
 
       {/* Mobile Drawer */}
-      <div
-        className={`fixed inset-y-0 left-0 z-50 w-64 bg-white transform transition-transform duration-300 ease-in-out lg:hidden ${
-          mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'
-        }`}
+      <Drawer
+        title="OnHands"
+        placement="left"
+        onClose={() => setMobileMenuOpen(false)}
+        open={mobileMenuOpen}
+        bodyStyle={{ padding: 0 }}
+        width={256}
       >
-        <div className="flex flex-col h-full">
-          <div className="flex items-center justify-between px-4 py-5 border-b border-gray-200">
-            <h1 className="text-xl font-bold text-gray-900">OnHands</h1>
-            <button
-              onClick={() => setMobileMenuOpen(false)}
-              className="text-gray-500 hover:text-gray-700"
-            >
-              <span className="sr-only">Close menu</span>
-              <svg
-                className="h-6 w-6"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
+        <Menu
+          mode="inline"
+          selectedKeys={selectedKeys}
+          items={menuItems}
+          style={{ borderRight: 0 }}
+        />
+        <div style={{ padding: '16px', borderTop: '1px solid #f0f0f0' }}>
+          <Button
+            type="text"
+            icon={<LogoutOutlined />}
+            onClick={() => {
+              handleSignOut();
+              setMobileMenuOpen(false);
+            }}
+            block
+            style={{ textAlign: 'left' }}
+          >
+            Sign Out
+          </Button>
+        </div>
+      </Drawer>
+
+      {/* Main Layout */}
+      <AntLayout style={{ marginLeft: isMobile ? 0 : 256 }}>
+        {/* Single Header with conditional content */}
+        <Header
+          style={{
+            background: '#fff',
+            padding: isMobile ? '0 16px' : '0 24px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: isMobile ? 'space-between' : 'flex-end',
+            boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
+            position: 'sticky',
+            top: 0,
+            zIndex: 10,
+          }}
+        >
+          {isMobile ? (
+            <>
+              <Button
+                type="text"
+                icon={<MenuOutlined />}
+                onClick={() => setMobileMenuOpen(true)}
+              />
+              <h1 style={{ margin: 0, fontSize: '18px', fontWeight: 'bold' }}>OnHands</h1>
+              <Button
+                type="text"
+                icon={<LogoutOutlined />}
+                onClick={handleSignOut}
               >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M6 18L18 6M6 6l12 12"
-                />
-              </svg>
-            </button>
-          </div>
-          <div className="flex-1 overflow-y-auto">
-            <nav className="px-2 py-4 space-y-1">
-              {navigation.map((item) => {
-                const isActive = location.pathname === item.href;
-                return (
-                  <Link
-                    key={item.name}
-                    to={item.href}
-                    onClick={handleLinkClick}
-                    className={`${
-                      isActive
-                        ? 'bg-indigo-50 text-indigo-700 border-indigo-500'
-                        : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
-                    } group flex items-center px-3 py-2 text-sm font-medium border-l-4 border-transparent`}
-                  >
-                    <span className="mr-3 text-lg">{item.icon}</span>
-                    {item.name}
-                  </Link>
-                );
-              })}
-            </nav>
-          </div>
-          <div className="flex-shrink-0 border-t border-gray-200 p-4">
-            <button
-              onClick={() => {
-                handleSignOut();
-                handleLinkClick();
-              }}
-              className="w-full text-left px-3 py-2 text-sm font-medium text-gray-700 hover:text-gray-900"
-            >
-              Sign Out
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Main Content */}
-      <div className="flex flex-col flex-1 overflow-hidden">
-        {/* Mobile Header */}
-        <div className="lg:hidden bg-white shadow-sm border-b border-gray-200">
-          <div className="flex items-center justify-between px-4 h-16">
-            <button
-              onClick={() => setMobileMenuOpen(true)}
-              className="text-gray-500 hover:text-gray-700"
-            >
-              <span className="sr-only">Open menu</span>
-              <svg
-                className="h-6 w-6"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M4 6h16M4 12h16M4 18h16"
-                />
-              </svg>
-            </button>
-            <h1 className="text-xl font-bold text-gray-900">OnHands</h1>
-            <button
+                Sign Out
+              </Button>
+            </>
+          ) : (
+            <Button
+              type="text"
+              icon={<LogoutOutlined />}
               onClick={handleSignOut}
-              className="text-gray-700 hover:text-gray-900 text-sm font-medium"
             >
               Sign Out
-            </button>
-          </div>
-        </div>
+            </Button>
+          )}
+        </Header>
 
-        {/* Desktop Header */}
-        <div className="hidden lg:block bg-white shadow-sm border-b border-gray-200">
-          <div className="flex items-center justify-end px-6 h-16">
-            <button
-              onClick={handleSignOut}
-              className="text-gray-700 hover:text-gray-900 px-3 py-2 rounded-md text-sm font-medium"
-            >
-              Sign Out
-            </button>
-          </div>
-        </div>
-
-        {/* Main Content Area */}
-        <main className="flex-1 overflow-y-auto">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Content */}
+        <Content
+          style={{
+            margin: '24px 16px',
+            padding: 24,
+            background: '#f5f5f5',
+            minHeight: 280,
+          }}
+        >
+          <div style={{ maxWidth: '1280px', margin: '0 auto' }}>
             {children}
           </div>
-        </main>
-      </div>
-    </div>
+        </Content>
+      </AntLayout>
+    </AntLayout>
   );
 }

@@ -1,23 +1,30 @@
+import { Typography, Row, Col, Space } from 'antd'
 import { FinancialSnapshotCards } from './FinancialSnapshotCards'
 import { CanIAffordCalculator } from './CanIAffordCalculator'
 import { RecentExpenses } from './RecentExpenses'
 import { UpcomingBills } from './UpcomingBills'
 
+const { Title } = Typography
+
 export function Dashboard() {
   return (
-    <div className="space-y-6">
+    <Space direction="vertical" size="large" style={{ width: '100%' }}>
       <div>
-        <h2 className="text-2xl font-bold text-gray-900 mb-6">Dashboard</h2>
+        <Title level={2} style={{ marginBottom: 24 }}>Dashboard</Title>
         <FinancialSnapshotCards />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <CanIAffordCalculator />
-        <UpcomingBills />
-      </div>
+      <Row gutter={[24, 24]}>
+        <Col xs={24} lg={12}>
+          <CanIAffordCalculator />
+        </Col>
+        <Col xs={24} lg={12}>
+          <UpcomingBills />
+        </Col>
+      </Row>
 
       <RecentExpenses />
-    </div>
+    </Space>
   )
 }
 

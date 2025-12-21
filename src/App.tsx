@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { useState, useEffect } from 'react'
 import { Session } from '@supabase/supabase-js'
+import { ConfigProvider, Spin } from 'antd'
 import { supabase } from './lib/supabase'
 import { Auth } from './components/Auth'
 import { Dashboard } from './components/Dashboard'
@@ -41,16 +42,24 @@ function App() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-lg">Loading...</div>
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <Spin size="large" />
       </div>
     )
   }
 
   return (
-    <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
-        <Routes>
+    <ConfigProvider
+      theme={{
+        token: {
+          colorPrimary: '#6366f1', // indigo-500
+          borderRadius: 6,
+        },
+      }}
+    >
+      <QueryClientProvider client={queryClient}>
+        <BrowserRouter>
+          <Routes>
           <Route
             path="/auth"
             element={!session ? <Auth /> : <Navigate to="/" replace />}
@@ -151,9 +160,10 @@ function App() {
               )
             }
           />
-        </Routes>
-      </BrowserRouter>
-    </QueryClientProvider>
+          </Routes>
+        </BrowserRouter>
+      </QueryClientProvider>
+    </ConfigProvider>
   )
 }
 
