@@ -97,6 +97,8 @@ export function CashFlow() {
   } | null>(null);
   const [isEditCashModalOpen, setIsEditCashModalOpen] = useState(false);
   const [cashForm] = Form.useForm();
+  const [expenseForm] = Form.useForm();
+  const [billForm] = Form.useForm();
   const [pendingIncome, setPendingIncome] = useState<{
     income: {
       id: string;
@@ -104,6 +106,16 @@ export function CashFlow() {
       amount: number;
       frequency?: 'monthly' | 'weekly' | 'one_time';
       category?: 'salary' | 'project' | 'other';
+    };
+    year: number;
+    month: number;
+  } | null>(null);
+  const [pendingExpense, setPendingExpense] = useState<{
+    expense: {
+      id: string;
+      name: string;
+      amount: number;
+      frequency: 'monthly' | 'weekly';
     };
     year: number;
     month: number;
@@ -319,6 +331,7 @@ export function CashFlow() {
             category: expense.category || 'Bills',
             dueDate,
             isPaid: expense.is_paid || false,
+            frequency: expense.frequency, // Include frequency to distinguish recurring vs one-time
           });
         }
       });
@@ -1289,17 +1302,22 @@ export function CashFlow() {
   const handleConfirmPaid = async () => {
     if (!pendingBill) return;
 
-    const { bill } = pendingBill;
-
-    // Create an expense to mark this as paid
-    // Use today's date, not the first of the month
-    const today = new Date();
-    const expenseDateStr = today.toISOString().split('T')[0];
-
     try {
+      const values = await billForm.validateFields();
+      const { bill } = pendingBill;
+      const actualAmount =
+        values.overrideAmount !== undefined && values.overrideAmount !== null
+          ? values.overrideAmount
+          : bill.amount;
+
+      // Create an expense to mark this as paid
+      // Use today's date, not the first of the month
+      const today = new Date();
+      const expenseDateStr = today.toISOString().split('T')[0];
+
       await createExpenseAsync({
         description: bill.name,
-        amount: bill.amount,
+        amount: actualAmount, // Use override amount if provided
         category: 'Bills',
         expense_date: expenseDateStr,
         frequency: 'one_time',
@@ -1308,18 +1326,34 @@ export function CashFlow() {
       message.success('Bill marked as paid successfully');
       // Close the confirmation dialog after successful creation
       setPendingBill(null);
+      billForm.resetFields();
     } catch (error) {
+      // Form validation error - don't show error message
+      if (error && typeof error === 'object' && 'errorFields' in error) {
+        return;
+      }
       console.error('Error creating expense:', error);
       message.error('Failed to mark bill as paid. Please try again.');
     }
   };
 
   // Handle marking expense as paid
-  const handleMarkExpensePaid = async (expenseId: string) => {
-    try {
+  const handleMarkExpensePaid = (
+    bill: {
+      type: 'liability' | 'expense' | 'income';
+      id: string;
+      name: string;
+      amount: number;
+      frequency?: 'monthly' | 'weekly' | 'one_time';
+    },
+    year: number,
+    month: number
+  ) => {
+    // For one-time expenses, mark as paid directly
+    if (bill.frequency === 'one_time') {
       updateExpense(
         {
-          id: expenseId,
+          id: bill.id,
           updates: { is_paid: true },
         },
         {
@@ -1334,9 +1368,67 @@ export function CashFlow() {
           },
         }
       );
+    } else {
+      // For recurring expenses, show modal to allow amount override
+      setPendingExpense({
+        expense: {
+          id: bill.id,
+          name: bill.name,
+          amount: bill.amount,
+          frequency: bill.frequency as 'monthly' | 'weekly',
+        },
+        year,
+        month,
+      });
+    }
+  };
+
+  // Confirm marking recurring expense as paid (with optional amount override)
+  const handleConfirmExpensePaid = async () => {
+    if (!pendingExpense) return;
+
+    try {
+      const values = await expenseForm.validateFields();
+      const { expense } = pendingExpense;
+      const actualAmount =
+        values.overrideAmount !== undefined && values.overrideAmount !== null
+          ? values.overrideAmount
+          : expense.amount;
+
+      updateExpense(
+        {
+          id: expense.id,
+          updates: {
+            is_paid: true,
+            amount: actualAmount, // Update with actual amount paid
+          },
+        },
+        {
+          onSuccess: () => {
+            message.success('Expense marked as paid successfully');
+            setPendingExpense(null);
+            expenseForm.resetFields();
+          },
+          onError: (error: Error) => {
+            message.error(
+              'Error marking expense as paid: ' +
+                (error instanceof Error ? error.message : 'Unknown error')
+            );
+          },
+        }
+      );
     } catch (error) {
+      // Form validation error - don't show error message
+      if (error && typeof error === 'object' && 'errorFields' in error) {
+        return;
+      }
       console.error('Error marking expense as paid:', error);
     }
+  };
+
+  const handleCancelExpensePaid = () => {
+    setPendingExpense(null);
+    expenseForm.resetFields();
   };
 
   // Handle marking income as received
@@ -1408,6 +1500,7 @@ export function CashFlow() {
   // Cancel marking bill as paid
   const handleCancelPaid = () => {
     setPendingBill(null);
+    billForm.resetFields();
   };
 
   return (
@@ -1764,12 +1857,15 @@ export function CashFlow() {
                                       }
                                     />
                                   ) : bill.type === 'expense' &&
-                                    bill.frequency === 'one_time' &&
                                     !bill.isPaid ? (
                                     <Checkbox
                                       checked={false}
                                       onChange={() =>
-                                        handleMarkExpensePaid(bill.id)
+                                        handleMarkExpensePaid(
+                                          bill,
+                                          selectedYear,
+                                          selectedMonth
+                                        )
                                       }
                                     />
                                   ) : bill.type === 'income' ? (
@@ -2127,12 +2223,15 @@ export function CashFlow() {
                                             }
                                           />
                                         ) : bill.type === 'expense' &&
-                                          bill.frequency === 'one_time' &&
                                           !bill.isPaid ? (
                                           <Checkbox
                                             checked={false}
                                             onChange={() =>
-                                              handleMarkExpensePaid(bill.id)
+                                              handleMarkExpensePaid(
+                                                bill,
+                                                year,
+                                                month
+                                              )
                                             }
                                           />
                                         ) : bill.type === 'income' ? (
@@ -2256,32 +2355,57 @@ export function CashFlow() {
         cancelText="Cancel"
       >
         {pendingBill && (
-          <Space direction="vertical" size="large" style={{ width: '100%' }}>
-            <Alert
-              message="Confirm Payment"
-              description="Are you sure you want to mark this bill as paid? This will create an expense record with today's date."
-              type="warning"
-              showIcon
-            />
-            <Descriptions column={2} bordered size="small">
-              <Descriptions.Item label="Bill Name">
-                {pendingBill.bill.name}
-              </Descriptions.Item>
-              <Descriptions.Item label="Amount">
-                {formatCurrency(pendingBill.bill.amount)}
-              </Descriptions.Item>
-              <Descriptions.Item label="Due Month">
-                {monthNames[pendingBill.month]} {pendingBill.year}
-              </Descriptions.Item>
-              <Descriptions.Item label="Payment Date">
-                {new Date().toLocaleDateString('en-US', {
-                  year: 'numeric',
-                  month: 'long',
-                  day: 'numeric',
-                })}
-              </Descriptions.Item>
-            </Descriptions>
-          </Space>
+          <Form
+            key={pendingBill.bill.id}
+            form={billForm}
+            layout="vertical"
+            initialValues={{
+              overrideAmount: pendingBill.bill.amount,
+            }}
+          >
+            <Space direction="vertical" size="large" style={{ width: '100%' }}>
+              <Alert
+                message="Confirm Payment"
+                description="Mark this bill as paid. You can override the amount if the actual payment differs from the expected amount."
+                type="warning"
+                showIcon
+              />
+              <Descriptions column={2} bordered size="small">
+                <Descriptions.Item label="Bill Name">
+                  {pendingBill.bill.name}
+                </Descriptions.Item>
+                <Descriptions.Item label="Expected Amount">
+                  {formatCurrency(pendingBill.bill.amount)}
+                </Descriptions.Item>
+                <Descriptions.Item label="Due Month">
+                  {monthNames[pendingBill.month]} {pendingBill.year}
+                </Descriptions.Item>
+                <Descriptions.Item label="Payment Date">
+                  {new Date().toLocaleDateString('en-US', {
+                    year: 'numeric',
+                    month: 'long',
+                    day: 'numeric',
+                  })}
+                </Descriptions.Item>
+              </Descriptions>
+              <Form.Item
+                label="Actual Amount Paid (Optional)"
+                name="overrideAmount"
+                tooltip="Leave empty to use the expected amount, or enter the actual amount you paid"
+              >
+                <InputNumber
+                  style={{ width: '100%' }}
+                  prefix="₱"
+                  min={0}
+                  step={0.01}
+                  precision={2}
+                  placeholder={`Default: ${formatCurrency(
+                    pendingBill.bill.amount
+                  )}`}
+                />
+              </Form.Item>
+            </Space>
+          </Form>
         )}
       </Modal>
 
@@ -2311,6 +2435,60 @@ export function CashFlow() {
               </Descriptions.Item>
             </Descriptions>
           </Space>
+        )}
+      </Modal>
+
+      {/* Confirmation Modal for Marking Recurring Expense as Paid */}
+      <Modal
+        open={pendingExpense !== null}
+        onCancel={handleCancelExpensePaid}
+        onOk={handleConfirmExpensePaid}
+        title="Mark Expense as Paid"
+        okText="Confirm Payment"
+        cancelText="Cancel"
+      >
+        {pendingExpense && (
+          <Form
+            key={pendingExpense.expense.id}
+            form={expenseForm}
+            layout="vertical"
+            initialValues={{
+              overrideAmount: pendingExpense.expense.amount,
+            }}
+          >
+            <Space direction="vertical" size="large" style={{ width: '100%' }}>
+              <Alert
+                message="Confirm Payment"
+                description="Mark this recurring expense as paid. You can override the amount if the actual payment differs from the expected amount."
+                type="warning"
+                showIcon
+              />
+              <Descriptions column={1} bordered size="small">
+                <Descriptions.Item label="Expense Name">
+                  {pendingExpense.expense.name}
+                </Descriptions.Item>
+                <Descriptions.Item label="Expected Amount">
+                  {formatCurrency(pendingExpense.expense.amount)}
+                </Descriptions.Item>
+              </Descriptions>
+              <Form.Item
+                label="Actual Amount Paid (Optional)"
+                name="overrideAmount"
+                tooltip="Leave empty to use the expected amount, or enter the actual amount you paid"
+              >
+                <InputNumber
+                  style={{ width: '100%' }}
+                  prefix="₱"
+                  min={0}
+                  step={0.01}
+                  precision={2}
+                  placeholder={`Default: ${formatCurrency(
+                    pendingExpense.expense.amount
+                  )}`}
+                />
+              </Form.Item>
+            </Space>
+          </Form>
         )}
       </Modal>
 
