@@ -50,6 +50,7 @@ const navigation = [
   { name: 'Liabilities', href: '/liabilities', icon: FileTextOutlined },
   { name: 'Income', href: '/income', icon: WalletOutlined },
   { name: 'Expenses', href: '/expenses', icon: ShoppingOutlined },
+  { name: 'Budgets', href: '/budgets', icon: WalletOutlined },
   { name: 'AI Assistant', href: '/assistant', icon: RobotOutlined },
 ];
 

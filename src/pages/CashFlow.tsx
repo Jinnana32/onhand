@@ -4,6 +4,7 @@ import {
   useLiabilities,
   useExpenses,
   useIncomeSources,
+  useBudgets,
   useProfile,
 } from '../hooks';
 import { formatCurrency } from '../lib/utils';
@@ -68,6 +69,7 @@ export function CashFlow() {
     updateIncomeSourceAsync,
     createIncomeSourceAsync,
   } = useIncomeSources();
+  const { budgets, isLoading: isLoadingBudgets } = useBudgets();
   const {
     profile,
     isLoading: isLoadingProfile,
@@ -78,6 +80,7 @@ export function CashFlow() {
     isLoadingLiabilities ||
     isLoadingExpenses ||
     isLoadingIncome ||
+    isLoadingBudgets ||
     isLoadingProfile;
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
@@ -88,7 +91,7 @@ export function CashFlow() {
   >('all');
   const [pendingBill, setPendingBill] = useState<{
     bill: {
-      type: 'liability' | 'expense' | 'income';
+      type: 'liability' | 'expense' | 'income' | 'budget';
       id: string;
       name: string;
       amount: number;
@@ -163,12 +166,15 @@ export function CashFlow() {
 
   // Helper function to get filter group for a bill
   const getBillFilterGroup = (bill: {
-    type: 'liability' | 'expense' | 'income';
+    type: 'liability' | 'expense' | 'income' | 'budget';
     category: string;
     payment_type?: 'straight' | 'installment' | null;
   }): FilterGroup => {
     if (bill.type === 'income') {
       return 'income';
+    }
+    if (bill.type === 'budget') {
+      return 'other'; // Budgets go to 'other' category
     }
     if (bill.type === 'expense') {
       return 'recurring_expenses';
@@ -227,11 +233,11 @@ export function CashFlow() {
     };
   }, [expenses]);
 
-  // Filter active liabilities, recurring expenses, and recurring income, calculate which ones are due in the selected month
+  // Filter active liabilities, recurring expenses, recurring income, and budgets, calculate which ones are due in the selected month
   const billsForMonth = useMemo(() => {
     const bills: Array<{
-      type: 'liability' | 'expense' | 'income';
-      id: string; // liability id, expense id, or income id
+      type: 'liability' | 'expense' | 'income' | 'budget';
+      id: string; // liability id, expense id, income id, or budget id
       name: string;
       amount: number;
       category: string;
@@ -666,6 +672,33 @@ export function CashFlow() {
       });
     }
 
+    // Process budgets
+    if (budgets) {
+      const activeBudgets = budgets.filter((budget) => budget.is_active);
+      activeBudgets.forEach((budget) => {
+        if (!budget.budget_date) return;
+
+        const budgetDate = new Date(budget.budget_date);
+        budgetDate.setHours(0, 0, 0, 0);
+
+        // Check if this budget falls in the selected month
+        if (
+          budgetDate.getMonth() === selectedMonth &&
+          budgetDate.getFullYear() === selectedYear
+        ) {
+          bills.push({
+            type: 'budget',
+            id: budget.id,
+            name: budget.name,
+            amount: budget.amount,
+            category: 'Budget',
+            dueDate: budgetDate,
+            isPaid: true, // Budgets are always "paid" since they're already deducted from cash
+          });
+        }
+      });
+    }
+
     // Sort by due date
     const sortedBills = bills.sort(
       (a, b) => a.dueDate.getTime() - b.dueDate.getTime()
@@ -709,6 +742,7 @@ export function CashFlow() {
   }, [
     liabilities,
     expenses,
+    budgets,
     incomeSources,
     selectedMonth,
     selectedYear,
@@ -827,12 +861,15 @@ export function CashFlow() {
   };
 
   const getCategoryColor = (
-    billType: 'liability' | 'expense' | 'income',
+    billType: 'liability' | 'expense' | 'income' | 'budget',
     category: string,
     paymentType?: 'straight' | 'installment' | null
   ): string => {
     if (billType === 'income') {
       return 'green';
+    }
+    if (billType === 'budget') {
+      return 'blue';
     }
     switch (category) {
       case 'credit_card':
@@ -872,13 +909,16 @@ export function CashFlow() {
   };
 
   const getCategoryLabel = (
-    billType: 'liability' | 'expense' | 'income',
+    billType: 'liability' | 'expense' | 'income' | 'budget',
     category: string,
     paymentType?: 'straight' | 'installment' | null,
     liability?: { start_date: string | null; months_to_pay: number | null },
     currentYear?: number,
     currentMonth?: number
   ) => {
+    if (billType === 'budget') {
+      return 'Budget';
+    }
     if (billType === 'income') {
       // Capitalize first letter of category
       return category.charAt(0).toUpperCase() + category.slice(1);
@@ -945,7 +985,7 @@ export function CashFlow() {
     const monthsData: Record<
       string,
       Array<{
-        type: 'liability' | 'expense' | 'income';
+        type: 'liability' | 'expense' | 'income' | 'budget';
         id: string;
         name: string;
         amount: number;
@@ -1284,6 +1324,33 @@ export function CashFlow() {
         });
       }
 
+      // Process budgets
+      if (budgets) {
+        const activeBudgets = budgets.filter((budget) => budget.is_active);
+        activeBudgets.forEach((budget) => {
+          if (!budget.budget_date) return;
+
+          const budgetDate = new Date(budget.budget_date);
+          budgetDate.setHours(0, 0, 0, 0);
+
+          // Check if this budget falls in the target month
+          if (
+            budgetDate.getMonth() === targetMonth &&
+            budgetDate.getFullYear() === targetYear
+          ) {
+            monthsData[monthKey].push({
+              type: 'budget',
+              id: budget.id,
+              name: budget.name,
+              amount: budget.amount,
+              category: 'Budget',
+              dueDate: budgetDate,
+              isPaid: true, // Budgets are always "paid" since they're already deducted from cash
+            });
+          }
+        });
+      }
+
       // Sort by due date
       monthsData[monthKey].sort(
         (a, b) => a.dueDate.getTime() - b.dueDate.getTime()
@@ -1328,6 +1395,7 @@ export function CashFlow() {
     liabilities,
     expenses,
     incomeSources,
+    budgets,
     viewMode,
     selectedFilters,
     paidFilter,
@@ -1403,7 +1471,7 @@ export function CashFlow() {
   // Handle marking a bill as paid
   const handleTogglePaid = (
     bill: {
-      type: 'liability' | 'expense' | 'income';
+      type: 'liability' | 'expense' | 'income' | 'budget';
       id: string;
       name: string;
       amount: number;
@@ -1412,6 +1480,8 @@ export function CashFlow() {
     year: number,
     month: number
   ) => {
+    // Budgets don't need to be toggled - they're always "paid"
+    if (bill.type === 'budget') return;
     // Only liabilities can be marked as paid (expenses and income are tracked differently)
     if (bill.type !== 'liability') return;
 
@@ -1466,7 +1536,7 @@ export function CashFlow() {
   // Handle marking expense as paid
   const handleMarkExpensePaid = (
     bill: {
-      type: 'liability' | 'expense' | 'income';
+      type: 'liability' | 'expense' | 'income' | 'budget';
       id: string;
       name: string;
       amount: number;
@@ -1475,6 +1545,8 @@ export function CashFlow() {
     year: number,
     month: number
   ) => {
+    // Budgets don't need to be marked as paid - they're always "paid"
+    if (bill.type === 'budget') return;
     // For one-time expenses, mark as paid directly
     if (bill.frequency === 'one_time') {
       updateExpense(
@@ -1560,7 +1632,7 @@ export function CashFlow() {
   // Handle opening edit override modal for recurring expense
   const handleEditExpenseOverride = (
     bill: {
-      type: 'liability' | 'expense' | 'income';
+      type: 'liability' | 'expense' | 'income' | 'budget';
       id: string;
       name: string;
       amount: number;
@@ -1643,7 +1715,7 @@ export function CashFlow() {
   // Handle opening edit override modal for liability
   const handleEditLiabilityOverride = (
     bill: {
-      type: 'liability' | 'expense' | 'income';
+      type: 'liability' | 'expense' | 'income' | 'budget';
       id: string;
       name: string;
       amount: number;
@@ -2039,7 +2111,7 @@ export function CashFlow() {
                     .reduce((sum, bill) => sum + bill.amount, 0);
                   const dayBillsTotal = dayBills
                     .filter((bill) => {
-                      // Only count expenses/bills (not income)
+                      // Only count expenses/bills/budgets (not income)
                       if (bill.type === 'income') return false;
                       // When paidFilter is 'all', include all bills in total
                       if (paidFilter === 'all') {
@@ -2050,6 +2122,7 @@ export function CashFlow() {
                         return bill.isPaid;
                       }
                       // When paidFilter is 'unpaid' or 'unchecked', only count unpaid bills
+                      // Budgets are always "paid" so they won't show in unpaid/unchecked
                       if (
                         paidFilter === 'unpaid' ||
                         paidFilter === 'unchecked'
@@ -2223,7 +2296,9 @@ export function CashFlow() {
                                         bill.payment_type
                                       )}
                                     >
-                                      {bill.type === 'expense'
+                                      {bill.type === 'budget'
+                                        ? 'Budget'
+                                        : bill.type === 'expense'
                                         ? 'Recurring Expense'
                                         : getCategoryLabel(
                                             bill.type,
@@ -2263,27 +2338,32 @@ export function CashFlow() {
                                         ? '#9ca3af'
                                         : bill.type === 'income'
                                         ? '#16a34a'
+                                        : bill.type === 'budget'
+                                        ? '#2563eb'
                                         : '#dc2626',
                                   }}
                                 >
                                   {bill.type === 'income' ? '+' : '-'}
                                   {formatCurrency(bill.amount)}
                                 </Text>
-                                {bill.type === 'liability' && !bill.isPaid && (
-                                  <Button
-                                    type="text"
-                                    size="small"
-                                    icon={<EditOutlined />}
-                                    onClick={() =>
-                                      handleEditLiabilityOverride(
-                                        bill,
-                                        selectedYear,
-                                        selectedMonth
-                                      )
-                                    }
-                                    style={{ color: '#1890ff' }}
-                                  />
-                                )}
+                                {bill.type === 'budget'
+                                  ? null
+                                  : bill.type === 'liability' &&
+                                    !bill.isPaid && (
+                                      <Button
+                                        type="text"
+                                        size="small"
+                                        icon={<EditOutlined />}
+                                        onClick={() =>
+                                          handleEditLiabilityOverride(
+                                            bill,
+                                            selectedYear,
+                                            selectedMonth
+                                          )
+                                        }
+                                        style={{ color: '#1890ff' }}
+                                      />
+                                    )}
                                 {bill.type === 'expense' &&
                                   bill.frequency !== 'one_time' &&
                                   !bill.isPaid && (

@@ -72,3 +72,14 @@ export interface Expense {
   updated_at: string
 }
 
+export interface Budget {
+  id: string
+  user_id: string
+  name: string
+  amount: number
+  budget_date: string // Date when budget appears in calendar
+  is_active: boolean
+  created_at: string
+  updated_at: string
+}
+

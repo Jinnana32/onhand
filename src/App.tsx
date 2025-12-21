@@ -10,6 +10,7 @@ import { Layout } from './components/Layout'
 import { Liabilities } from './pages/Liabilities'
 import { Income } from './pages/Income'
 import { Expenses } from './pages/Expenses'
+import { Budgets } from './pages/Budgets'
 import { Assistant } from './pages/Assistant'
 import { AffordabilityCalculator } from './pages/AffordabilityCalculator'
 import { CreditCards } from './pages/CreditCards'
@@ -118,6 +119,18 @@ function App() {
               session ? (
                 <ProtectedRoute>
                   <Expenses />
+                </ProtectedRoute>
+              ) : (
+                <Navigate to="/auth" replace />
+              )
+            }
+          />
+          <Route
+            path="/budgets"
+            element={
+              session ? (
+                <ProtectedRoute>
+                  <Budgets />
                 </ProtectedRoute>
               ) : (
                 <Navigate to="/auth" replace />
