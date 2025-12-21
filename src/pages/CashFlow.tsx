@@ -67,6 +67,7 @@ type FilterGroup =
   | 'loans'
   | 'installments'
   | 'income'
+  | 'budget'
   | 'other';
 
 export function CashFlow() {
@@ -197,7 +198,7 @@ export function CashFlow() {
       return 'income';
     }
     if (bill.type === 'budget') {
-      return 'other'; // Budgets go to 'other' category
+      return 'budget';
     }
     if (bill.type === 'expense') {
       return 'recurring_expenses';
@@ -411,7 +412,7 @@ export function CashFlow() {
     // Process recurring expenses
     if (expenses) {
       const activeRecurringExpenses = expenses.filter(
-        (e) => e.is_active && e.frequency !== 'one_time'
+        (e) => e.is_active && e.frequency !== 'one_time' && !e.budget_id // Exclude budget-linked expenses
       );
 
       // Get all override expenses (one-time expenses with "(Override)" in description)
@@ -475,7 +476,8 @@ export function CashFlow() {
         (e) =>
           e.is_active &&
           e.frequency === 'one_time' &&
-          !e.description.includes('(Override)')
+          !e.description.includes('(Override)') &&
+          !e.budget_id // Exclude budget-linked expenses
       );
       activeOneTimeExpenses.forEach((expense) => {
         if (!expense.expense_date) return;
@@ -506,7 +508,8 @@ export function CashFlow() {
         (e) =>
           e.is_active &&
           e.frequency === 'one_time' &&
-          e.description.includes('(Override)')
+          e.description.includes('(Override)') &&
+          !e.budget_id // Exclude budget-linked expenses
       );
       overrideExpensesForMonth.forEach((expense) => {
         if (!expense.expense_date) return;
@@ -834,8 +837,9 @@ export function CashFlow() {
   const remainingBills = useMemo(() => {
     return billsForMonth
       .filter((bill) => {
-        // Only liabilities and expenses (not income)
+        // Only liabilities and expenses (not income, not budgets)
         if (bill.type === 'income') return false;
+        if (bill.type === 'budget') return false; // Budgets are not bills
         // Only unpaid
         return !bill.isPaid;
       })
@@ -1518,6 +1522,7 @@ export function CashFlow() {
     { value: 'credit_cards', label: 'Credit Cards' },
     { value: 'loans', label: 'Loans' },
     { value: 'installments', label: 'Installments' },
+    { value: 'budget', label: 'Budgets' },
     { value: 'other', label: 'Other' },
   ];
 
@@ -1912,18 +1917,12 @@ export function CashFlow() {
         description: values.description,
         amount,
         category: values.category || null,
-        expense_date:
-          values.frequency === 'one_time'
-            ? (values.expense_date as Dayjs).format('YYYY-MM-DD')
-            : new Date().toISOString().split('T')[0],
-        frequency: values.frequency,
-        due_date: values.frequency !== 'one_time' ? values.due_date : null,
-        start_date:
-          values.frequency !== 'one_time'
-            ? (values.start_date as Dayjs).format('YYYY-MM-DD')
-            : null,
+        expense_date: (values.expense_date as Dayjs).format('YYYY-MM-DD'),
+        frequency: 'one_time' as const,
+        due_date: null,
+        start_date: null,
         budget_id: values.budget_id || null,
-        is_active: values.is_active !== undefined ? values.is_active : true,
+        is_active: true,
         is_paid: values.is_paid ?? false,
       };
 
@@ -2254,8 +2253,9 @@ export function CashFlow() {
                     .reduce((sum, bill) => sum + bill.amount, 0);
                   const dayBillsTotal = dayBills
                     .filter((bill) => {
-                      // Only count expenses/bills/budgets (not income)
+                      // Only count expenses/bills (not income, not budgets)
                       if (bill.type === 'income') return false;
+                      if (bill.type === 'budget') return false; // Budgets are not bills
                       // When paidFilter is 'all', include all bills in total
                       if (paidFilter === 'all') {
                         return true;
@@ -2265,7 +2265,6 @@ export function CashFlow() {
                         return bill.isPaid;
                       }
                       // When paidFilter is 'unpaid' or 'unchecked', only count unpaid bills
-                      // Budgets are always "paid" so they won't show in unpaid/unchecked
                       if (
                         paidFilter === 'unpaid' ||
                         paidFilter === 'unchecked'
@@ -2568,9 +2567,7 @@ export function CashFlow() {
                                         }
                                       }}
                                       style={{ color: '#1890ff' }}
-                                    >
-                                      Add Expense
-                                    </Button>
+                                    />
                                   ) : (
                                     bill.type === 'liability' &&
                                     !bill.isPaid && (
@@ -2715,8 +2712,9 @@ export function CashFlow() {
                 .reduce((sum, bill) => sum + bill.amount, 0);
               const monthBillsTotal = monthBills
                 .filter((bill) => {
-                  // Only count expenses/bills (not income)
+                  // Only count expenses/bills (not income, not budgets)
                   if (bill.type === 'income') return false;
+                  if (bill.type === 'budget') return false; // Budgets are not bills
                   // When paidFilter is 'all', include all bills in total
                   if (paidFilter === 'all') {
                     return true;
@@ -2835,8 +2833,9 @@ export function CashFlow() {
                           .reduce((sum, bill) => sum + bill.amount, 0);
                         const dayBillsTotal = dayBills
                           .filter((bill) => {
-                            // Only count expenses/bills (not income)
+                            // Only count expenses/bills (not income, not budgets)
                             if (bill.type === 'income') return false;
+                            if (bill.type === 'budget') return false; // Budgets are not bills
                             // When paidFilter is 'all', include all bills in total
                             if (paidFilter === 'all') {
                               return true;
@@ -3753,113 +3752,30 @@ export function CashFlow() {
             <Input />
           </Form.Item>
 
-          <Form.Item
-            name="frequency"
-            label="Frequency"
-            rules={[{ required: true }]}
-          >
-            <Select>
-              <Option value="one_time">One Time</Option>
-              <Option value="monthly">Monthly (Recurring)</Option>
-              <Option value="weekly">Weekly (Recurring)</Option>
-            </Select>
+          <Form.Item name="frequency" hidden initialValue="one_time">
+            <Input />
           </Form.Item>
 
           <Form.Item
-            noStyle
-            shouldUpdate={(prevValues, currentValues) =>
-              prevValues.frequency !== currentValues.frequency
-            }
+            name="expense_date"
+            label="Date"
+            rules={[{ required: true, message: 'Please select a date' }]}
           >
-            {({ getFieldValue }) => {
-              const frequency = getFieldValue('frequency');
-              if (frequency === 'one_time') {
-                return (
-                  <>
-                    <Form.Item
-                      name="expense_date"
-                      label="Date"
-                      rules={[
-                        { required: true, message: 'Please select a date' },
-                      ]}
-                    >
-                      <DatePicker style={{ width: '100%' }} />
-                    </Form.Item>
-                    <Form.Item
-                      name="is_paid"
-                      valuePropName="checked"
-                      label="Paid"
-                    >
-                      <Switch />
-                      <div
-                        style={{
-                          fontSize: '12px',
-                          color: '#6b7280',
-                          marginTop: 4,
-                        }}
-                      >
-                        Mark as paid if you've already paid this expense. Unpaid
-                        expenses won't deduct from the budget amount.
-                      </div>
-                    </Form.Item>
-                  </>
-                );
-              }
-              return (
-                <>
-                  <Form.Item
-                    name="start_date"
-                    label="Start Date"
-                    rules={[
-                      { required: true, message: 'Please select a start date' },
-                    ]}
-                  >
-                    <DatePicker style={{ width: '100%' }} />
-                  </Form.Item>
-                  <Form.Item
-                    name="due_date"
-                    label="Due Date (Day of Month, 1-31)"
-                    rules={[
-                      { required: true, message: 'Please enter a due date' },
-                      {
-                        type: 'number',
-                        min: 1,
-                        max: 31,
-                        message: 'Due date must be between 1 and 31',
-                      },
-                    ]}
-                  >
-                    <InputNumber
-                      style={{ width: '100%' }}
-                      min={1}
-                      max={31}
-                      placeholder="15"
-                    />
-                  </Form.Item>
-                  <Form.Item name="is_active" valuePropName="checked">
-                    <Switch />
-                    <span style={{ marginLeft: 8 }}>Active</span>
-                  </Form.Item>
-                  <Form.Item
-                    name="is_paid"
-                    valuePropName="checked"
-                    label="Paid"
-                  >
-                    <Switch />
-                    <div
-                      style={{
-                        fontSize: '12px',
-                        color: '#6b7280',
-                        marginTop: 4,
-                      }}
-                    >
-                      Mark as paid if you've already paid this expense. Unpaid
-                      expenses won't deduct from the budget amount.
-                    </div>
-                  </Form.Item>
-                </>
-              );
-            }}
+            <DatePicker style={{ width: '100%' }} />
+          </Form.Item>
+
+          <Form.Item name="is_paid" valuePropName="checked" label="Paid">
+            <Switch />
+            <div
+              style={{
+                fontSize: '12px',
+                color: '#6b7280',
+                marginTop: 4,
+              }}
+            >
+              Mark as paid if you've already paid this expense. Unpaid expenses
+              won't deduct from the budget amount.
+            </div>
           </Form.Item>
         </Form>
       </Modal>

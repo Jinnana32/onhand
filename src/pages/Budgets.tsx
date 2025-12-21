@@ -24,6 +24,18 @@ import { Budget } from '../types/database.types'
 import { formatCurrency, formatDate } from '../lib/utils'
 
 const { Title } = Typography
+const { Option } = Select
+
+const expenseCategories = [
+  'Food',
+  'Transport',
+  'Shopping',
+  'Bills',
+  'Entertainment',
+  'Healthcare',
+  'Education',
+  'Other',
+]
 
 export function Budgets() {
   const {
@@ -491,91 +503,27 @@ export function Budgets() {
             <Input />
           </Form.Item>
 
-          <Form.Item
-            name="frequency"
-            label="Frequency"
-            rules={[{ required: true }]}
-          >
-            <Select>
-              <Option value="one_time">One Time</Option>
-              <Option value="monthly">Monthly (Recurring)</Option>
-              <Option value="weekly">Weekly (Recurring)</Option>
-            </Select>
+          <Form.Item name="frequency" hidden initialValue="one_time">
+            <Input />
           </Form.Item>
 
           <Form.Item
-            noStyle
-            shouldUpdate={(prevValues, currentValues) => prevValues.frequency !== currentValues.frequency}
+            name="expense_date"
+            label="Date"
+            rules={[{ required: true, message: 'Please select a date' }]}
           >
-            {({ getFieldValue }) => {
-              const frequency = getFieldValue('frequency')
-              if (frequency === 'one_time') {
-                return (
-                  <>
-                    <Form.Item
-                      name="expense_date"
-                      label="Date"
-                      rules={[{ required: true, message: 'Please select a date' }]}
-                    >
-                      <DatePicker style={{ width: '100%' }} />
-                    </Form.Item>
-                    <Form.Item
-                      name="is_paid"
-                      valuePropName="checked"
-                      label="Paid"
-                    >
-                      <Switch />
-                      <div style={{ fontSize: '12px', color: '#6b7280', marginTop: 4 }}>
-                        Mark as paid if you've already paid this expense. Unpaid expenses won't deduct from the budget amount.
-                      </div>
-                    </Form.Item>
-                  </>
-                )
-              }
-              return (
-                <>
-                  <Form.Item
-                    name="start_date"
-                    label="Start Date"
-                    rules={[{ required: true, message: 'Please select a start date' }]}
-                  >
-                    <DatePicker style={{ width: '100%' }} />
-                  </Form.Item>
-                  <Form.Item
-                    name="due_date"
-                    label="Due Date (Day of Month, 1-31)"
-                    rules={[
-                      { required: true, message: 'Please enter a due date' },
-                      { type: 'number', min: 1, max: 31, message: 'Due date must be between 1 and 31' },
-                    ]}
-                  >
-                    <InputNumber
-                      style={{ width: '100%' }}
-                      min={1}
-                      max={31}
-                      placeholder="15"
-                    />
-                  </Form.Item>
-                  <Form.Item
-                    name="is_active"
-                    valuePropName="checked"
-                  >
-                    <Switch />
-                    <span style={{ marginLeft: 8 }}>Active</span>
-                  </Form.Item>
-                  <Form.Item
-                    name="is_paid"
-                    valuePropName="checked"
-                    label="Paid"
-                  >
-                    <Switch />
-                    <div style={{ fontSize: '12px', color: '#6b7280', marginTop: 4 }}>
-                      Mark as paid if you've already paid this expense. Unpaid expenses won't deduct from the budget amount.
-                    </div>
-                  </Form.Item>
-                </>
-              )
-            }}
+            <DatePicker style={{ width: '100%' }} />
+          </Form.Item>
+
+          <Form.Item
+            name="is_paid"
+            valuePropName="checked"
+            label="Paid"
+          >
+            <Switch />
+            <div style={{ fontSize: '12px', color: '#6b7280', marginTop: 4 }}>
+              Mark as paid if you've already paid this expense. Unpaid expenses won't deduct from the budget amount.
+            </div>
           </Form.Item>
         </Form>
       </Modal>
