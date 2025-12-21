@@ -79,18 +79,23 @@ export function useExpenses() {
       // Ensure profile exists
       await ensureProfileExists()
       
-      const isPaid = input.is_paid !== undefined ? input.is_paid : (input.frequency === 'one_time' ? true : false)
+      const isPaid = input.is_paid !== undefined ? input.is_paid : false
+      const frequency = input.frequency || 'one_time'
       
       const { data, error } = await supabase
         .from('expenses')
         .insert({
           user_id: userId,
+          description: input.description,
+          amount: input.amount,
+          category: input.category || null,
           expense_date: input.expense_date || new Date().toISOString().split('T')[0],
-          frequency: input.frequency || 'one_time',
+          frequency: frequency,
+          due_date: input.due_date || null,
+          start_date: input.start_date || (frequency !== 'one_time' ? new Date().toISOString().split('T')[0] : null),
+          liability_id: input.liability_id || null,
           is_active: input.is_active !== undefined ? input.is_active : true,
           is_paid: isPaid,
-          start_date: input.start_date || (input.frequency !== 'one_time' ? new Date().toISOString().split('T')[0] : null),
-          ...input,
         })
         .select()
         .single()

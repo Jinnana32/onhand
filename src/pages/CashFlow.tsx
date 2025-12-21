@@ -309,14 +309,33 @@ export function CashFlow() {
           // Check if this specific due date is within the payment period
           if (!endDate || dueDate <= endDate) {
             // Check if there's an override expense for this liability in this month
+            // Match by liability_id and month, or by description pattern as fallback
             const hasOverride = overrideExpenses.some((override) => {
               const overrideDate = new Date(override.expense_date);
-              return (
-                override.liability_id === liability.id &&
-                override.description === `${liability.name} (Override)` &&
+              const isSameMonth =
                 overrideDate.getMonth() === selectedMonth &&
-                overrideDate.getFullYear() === selectedYear
-              );
+                overrideDate.getFullYear() === selectedYear;
+
+              if (!isSameMonth) return false;
+
+              // Primary check: match by liability_id
+              if (
+                override.liability_id &&
+                override.liability_id === liability.id
+              ) {
+                return true;
+              }
+
+              // Fallback: match by description pattern
+              if (
+                override.description &&
+                override.description.includes(liability.name) &&
+                override.description.includes('(Override)')
+              ) {
+                return true;
+              }
+
+              return false;
             });
 
             // Skip this liability if an override exists for this month
@@ -410,10 +429,13 @@ export function CashFlow() {
       });
     }
 
-    // Process one-time expenses
+    // Process one-time expenses (excluding overrides - they're handled separately)
     if (expenses) {
       const activeOneTimeExpenses = expenses.filter(
-        (e) => e.is_active && e.frequency === 'one_time'
+        (e) =>
+          e.is_active &&
+          e.frequency === 'one_time' &&
+          !e.description.includes('(Override)')
       );
       activeOneTimeExpenses.forEach((expense) => {
         if (!expense.expense_date) return;
@@ -434,6 +456,37 @@ export function CashFlow() {
             category: expense.category || 'Bills',
             dueDate: expenseDate,
             isPaid: expense.is_paid !== undefined ? expense.is_paid : true, // Default to paid for one-time expenses
+            frequency: expense.frequency,
+          });
+        }
+      });
+
+      // Process override expenses separately (they replace the original recurring item)
+      const overrideExpensesForMonth = expenses.filter(
+        (e) =>
+          e.is_active &&
+          e.frequency === 'one_time' &&
+          e.description.includes('(Override)')
+      );
+      overrideExpensesForMonth.forEach((expense) => {
+        if (!expense.expense_date) return;
+
+        const expenseDate = new Date(expense.expense_date);
+        expenseDate.setHours(0, 0, 0, 0);
+
+        // Check if this override expense falls in the selected month
+        if (
+          expenseDate.getMonth() === selectedMonth &&
+          expenseDate.getFullYear() === selectedYear
+        ) {
+          bills.push({
+            type: 'expense',
+            id: expense.id,
+            name: expense.description,
+            amount: expense.amount,
+            category: expense.category || 'Bills',
+            dueDate: expenseDate,
+            isPaid: expense.is_paid !== undefined ? expense.is_paid : true,
             frequency: expense.frequency,
           });
         }
@@ -684,12 +737,12 @@ export function CashFlow() {
       .reduce((sum, bill) => sum + bill.amount, 0);
   }, [billsForMonth]);
 
-  // Calculate remaining bills (unpaid liabilities for the month)
+  // Calculate remaining bills (unpaid liabilities and expenses for the month)
   const remainingBills = useMemo(() => {
     return billsForMonth
       .filter((bill) => {
-        // Only liabilities (not expenses or income)
-        if (bill.type !== 'liability') return false;
+        // Only liabilities and expenses (not income)
+        if (bill.type === 'income') return false;
         // Only unpaid
         return !bill.isPaid;
       })
@@ -1912,7 +1965,7 @@ export function CashFlow() {
                   type="secondary"
                   style={{ fontSize: '12px', display: 'block', marginTop: 4 }}
                 >
-                  Unpaid liabilities
+                  Unpaid liabilities and expenses
                 </Text>
               </Col>
               <Col xs={24} sm={12} md={8}>
@@ -1942,6 +1995,26 @@ export function CashFlow() {
                   style={{ fontSize: '12px', display: 'block', marginTop: 4 }}
                 >
                   Current cash on hand
+                </Text>
+              </Col>
+              <Col xs={24} sm={12} md={8}>
+                <Statistic
+                  title="Remaining Funds After Paying Remaining Bills"
+                  value={formatCurrency(
+                    (profile?.current_cash || 0) - remainingBills
+                  )}
+                  valueStyle={{
+                    color:
+                      (profile?.current_cash || 0) - remainingBills >= 0
+                        ? '#16a34a'
+                        : '#dc2626',
+                  }}
+                />
+                <Text
+                  type="secondary"
+                  style={{ fontSize: '12px', display: 'block', marginTop: 4 }}
+                >
+                  Cash on hand - Unpaid bills
                 </Text>
               </Col>
             </Row>

@@ -94,7 +94,7 @@ export function Expenses() {
         expense_date: dayjs(),
         start_date: dayjs(),
         is_active: true,
-        is_paid: true, // One-time expenses default to paid
+        is_paid: false, // Default to unpaid - user can check if already paid
       })
     }
     setIsModalOpen(true)
@@ -135,7 +135,7 @@ export function Expenses() {
           ? (values.start_date as Dayjs).format('YYYY-MM-DD')
           : null,
         is_active: values.is_active,
-        is_paid: values.is_paid !== undefined ? values.is_paid : (values.frequency === 'one_time' ? true : false),
+        is_paid: values.is_paid ?? false,
     }
 
     if (editingExpense) {
@@ -497,7 +497,9 @@ export function Expenses() {
         title={editingExpense ? 'Edit Expense' : 'Log Expense'}
         open={isModalOpen}
         onCancel={handleCloseModal}
-        onOk={handleSubmit}
+        onOk={() => {
+          form.submit();
+        }}
         confirmLoading={isCreating || isUpdating}
         okText={editingExpense ? 'Update' : 'Log Expense'}
         cancelText="Cancel"
