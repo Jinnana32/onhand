@@ -1,14 +1,14 @@
-import { useState, useMemo } from 'react'
-import { 
-  Table, 
-  Button, 
-  Modal, 
-  Form, 
-  Input, 
-  InputNumber, 
-  DatePicker, 
-  Typography, 
-  Space, 
+import { useState, useMemo } from 'react';
+import {
+  Table,
+  Button,
+  Modal,
+  Form,
+  Input,
+  InputNumber,
+  DatePicker,
+  Typography,
+  Space,
   Popconfirm,
   message,
   Empty,
@@ -18,16 +18,24 @@ import {
   Switch,
   List,
   Tag,
-  Checkbox
-} from 'antd'
-import { PlusOutlined, EditOutlined, DeleteOutlined, SearchOutlined, ShoppingOutlined, EyeOutlined } from '@ant-design/icons'
-import dayjs, { Dayjs } from 'dayjs'
-import { useBudgets, useProfile, useExpenses } from '../hooks'
-import { Budget, Expense } from '../types/database.types'
-import { formatCurrency, formatDate } from '../lib/utils'
+  Checkbox,
+} from 'antd';
+import {
+  PlusOutlined,
+  EditOutlined,
+  DeleteOutlined,
+  SearchOutlined,
+  ShoppingOutlined,
+  EyeOutlined,
+  MinusCircleOutlined,
+} from '@ant-design/icons';
+import dayjs, { Dayjs } from 'dayjs';
+import { useBudgets, useProfile, useExpenses } from '../hooks';
+import { Budget, Expense } from '../types/database.types';
+import { formatCurrency, formatDate } from '../lib/utils';
 
-const { Title, Text } = Typography
-const { Option } = Select
+const { Title, Text } = Typography;
+const { Option } = Select;
 
 const expenseCategories = [
   'Food',
@@ -38,7 +46,7 @@ const expenseCategories = [
   'Healthcare',
   'Education',
   'Other',
-]
+];
 
 export function Budgets() {
   const {
@@ -49,64 +57,76 @@ export function Budgets() {
     deleteBudget,
     isCreating,
     isUpdating,
-  } = useBudgets()
-  const { profile } = useProfile()
-  const { expenses, createExpense, updateExpense, deleteExpense, isCreating: isCreatingExpense, isUpdating: isUpdatingExpense } = useExpenses()
-  const [form] = Form.useForm()
-  const [expenseForm] = Form.useForm()
-  const [editExpenseForm] = Form.useForm()
-  const [isModalOpen, setIsModalOpen] = useState(false)
-  const [isExpenseModalOpen, setIsExpenseModalOpen] = useState(false)
-  const [isViewExpensesModalOpen, setIsViewExpensesModalOpen] = useState(false)
-  const [isEditExpenseModalOpen, setIsEditExpenseModalOpen] = useState(false)
-  const [editingBudget, setEditingBudget] = useState<Budget | null>(null)
-  const [selectedBudgetForExpense, setSelectedBudgetForExpense] = useState<Budget | null>(null)
-  const [viewingBudget, setViewingBudget] = useState<Budget | null>(null)
-  const [editingExpense, setEditingExpense] = useState<Expense | null>(null)
-  const [deletingId, setDeletingId] = useState<string | null>(null)
-  const [searchText, setSearchText] = useState('')
+  } = useBudgets();
+  const { profile } = useProfile();
+  const {
+    expenses,
+    createExpense,
+    updateExpense,
+    deleteExpense,
+    isCreating: isCreatingExpense,
+    isUpdating: isUpdatingExpense,
+  } = useExpenses();
+  const [form] = Form.useForm();
+  const [expenseForm] = Form.useForm();
+  const [editExpenseForm] = Form.useForm();
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isExpenseModalOpen, setIsExpenseModalOpen] = useState(false);
+  const [isViewExpensesModalOpen, setIsViewExpensesModalOpen] = useState(false);
+  const [isEditExpenseModalOpen, setIsEditExpenseModalOpen] = useState(false);
+  const [editingBudget, setEditingBudget] = useState<Budget | null>(null);
+  const [selectedBudgetForExpense, setSelectedBudgetForExpense] =
+    useState<Budget | null>(null);
+  const [viewingBudget, setViewingBudget] = useState<Budget | null>(null);
+  const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [searchText, setSearchText] = useState('');
 
   const handleOpenModal = (budget?: Budget) => {
     if (budget) {
-      setEditingBudget(budget)
+      setEditingBudget(budget);
       form.setFieldsValue({
         name: budget.name,
         amount: budget.amount,
         budget_date: dayjs(budget.budget_date),
         is_active: budget.is_active,
-      })
+      });
     } else {
-      setEditingBudget(null)
-      form.resetFields()
+      setEditingBudget(null);
+      form.resetFields();
       form.setFieldsValue({
         budget_date: dayjs(),
         is_active: true,
-      })
+      });
     }
-    setIsModalOpen(true)
-  }
+    setIsModalOpen(true);
+  };
 
   const handleCloseModal = () => {
-    setIsModalOpen(false)
-    setEditingBudget(null)
-    form.resetFields()
-  }
+    setIsModalOpen(false);
+    setEditingBudget(null);
+    form.resetFields();
+  };
 
   const handleSubmit = async () => {
     try {
-      const values = await form.validateFields()
-      const amount = values.amount
+      const values = await form.validateFields();
+      const amount = values.amount;
 
       if (isNaN(amount) || amount <= 0) {
-        message.error('Please enter a valid amount')
-        return
+        message.error('Please enter a valid amount');
+        return;
       }
 
       // Check if user has enough cash (only for new budgets)
       if (!editingBudget && profile) {
         if (amount > profile.current_cash) {
-          message.error(`Insufficient funds. You only have ${formatCurrency(profile.current_cash)} available.`)
-          return
+          message.error(
+            `Insufficient funds. You only have ${formatCurrency(
+              profile.current_cash
+            )} available.`
+          );
+          return;
         }
       }
 
@@ -115,7 +135,7 @@ export function Budgets() {
         amount,
         budget_date: (values.budget_date as Dayjs).format('YYYY-MM-DD'),
         is_active: values.is_active,
-      }
+      };
 
       if (editingBudget) {
         updateBudget(
@@ -125,104 +145,140 @@ export function Budgets() {
           },
           {
             onSuccess: () => {
-              message.success('Budget updated successfully')
-              handleCloseModal()
+              message.success('Budget updated successfully');
+              handleCloseModal();
             },
             onError: (error: Error) => {
-              message.error('Error updating budget: ' + (error instanceof Error ? error.message : 'Unknown error'))
+              message.error(
+                'Error updating budget: ' +
+                  (error instanceof Error ? error.message : 'Unknown error')
+              );
             },
           }
-        )
+        );
       } else {
         createBudget(input, {
           onSuccess: () => {
-            message.success('Budget created successfully')
-            handleCloseModal()
+            message.success('Budget created successfully');
+            handleCloseModal();
           },
           onError: (error: Error) => {
-            message.error('Error creating budget: ' + (error instanceof Error ? error.message : 'Unknown error'))
+            message.error(
+              'Error creating budget: ' +
+                (error instanceof Error ? error.message : 'Unknown error')
+            );
           },
-        })
+        });
       }
     } catch (error) {
       // Form validation errors are handled by Ant Design
     }
-  }
+  };
 
   const handleOpenExpenseModal = (budget: Budget) => {
-    setSelectedBudgetForExpense(budget)
-    expenseForm.resetFields()
+    setSelectedBudgetForExpense(budget);
+    expenseForm.resetFields();
     expenseForm.setFieldsValue({
       budget_id: budget.id,
-      frequency: 'one_time',
-      expense_date: dayjs(),
-      is_paid: false,
-    })
-    setIsExpenseModalOpen(true)
-  }
+      expenses: [{ description: '', amount: undefined }], // Start with one empty expense
+    });
+    setIsExpenseModalOpen(true);
+  };
 
   const handleCloseExpenseModal = () => {
-    setIsExpenseModalOpen(false)
-    setSelectedBudgetForExpense(null)
-    expenseForm.resetFields()
-  }
+    setIsExpenseModalOpen(false);
+    setSelectedBudgetForExpense(null);
+    expenseForm.resetFields();
+  };
 
   const handleSubmitExpense = async () => {
     try {
-      const values = await expenseForm.validateFields()
-      const amount = values.amount
+      const values = await expenseForm.validateFields();
+      const expenses = values.expenses || [];
+      const budgetId = values.budget_id;
 
-      if (isNaN(amount) || amount <= 0) {
-        message.error('Please enter a valid amount')
-        return
+      if (expenses.length === 0) {
+        message.error('Please add at least one expense');
+        return;
       }
 
-      const input = {
-        description: values.description,
-        amount,
-        category: values.category || null,
-        expense_date: values.frequency === 'one_time' 
-          ? (values.expense_date as Dayjs).format('YYYY-MM-DD')
-          : new Date().toISOString().split('T')[0],
-        frequency: values.frequency,
-        due_date: values.frequency !== 'one_time' ? values.due_date : null,
-        start_date: values.frequency !== 'one_time' 
-          ? (values.start_date as Dayjs).format('YYYY-MM-DD')
-          : null,
-        budget_id: values.budget_id || null,
-        is_active: values.is_active !== undefined ? values.is_active : true,
-        is_paid: values.is_paid ?? false,
+      // Filter out empty expenses
+      const validExpenses = expenses.filter(
+        (exp: { description: string; amount: number | undefined }) =>
+          exp.description &&
+          exp.description.trim() &&
+          exp.amount &&
+          exp.amount > 0
+      );
+
+      if (validExpenses.length === 0) {
+        message.error('Please enter at least one valid expense');
+        return;
       }
 
-      createExpense(input, {
-        onSuccess: () => {
-          message.success('Expense created successfully')
-          handleCloseExpenseModal()
-        },
-        onError: (error: Error) => {
-          message.error('Error creating expense: ' + (error instanceof Error ? error.message : 'Unknown error'))
-        },
-      })
+      // Create all expenses
+      const today = new Date().toISOString().split('T')[0];
+      const promises = validExpenses.map(
+        (exp: { description: string; amount: number }) =>
+          createExpense(
+            {
+              description: exp.description.trim(),
+              amount: exp.amount,
+              category: 'Other', // Default to "Other"
+              expense_date: today, // Default to today
+              frequency: 'one_time',
+              due_date: null,
+              start_date: null,
+              budget_id: budgetId,
+              is_active: true,
+              is_paid: false, // Default to unpaid
+            },
+            {
+              onError: (error: Error) => {
+                message.error(
+                  `Error creating expense "${exp.description}": ${
+                    error instanceof Error ? error.message : 'Unknown error'
+                  }`
+                );
+              },
+            }
+          )
+      );
+
+      // Wait for all expenses to be created
+      await Promise.all(promises);
+      message.success(
+        `Successfully created ${validExpenses.length} expense${
+          validExpenses.length > 1 ? 's' : ''
+        }`
+      );
+      handleCloseExpenseModal();
     } catch (error) {
       // Form validation errors are handled by Ant Design
     }
-  }
+  };
 
   const handleDelete = (id: string) => {
-    setDeletingId(id)
+    setDeletingId(id);
     deleteBudget(id, {
       onSuccess: () => {
-        message.success('Budget deleted successfully')
-        setDeletingId(null)
+        message.success('Budget deleted successfully');
+        setDeletingId(null);
       },
       onError: (error: Error) => {
-        message.error('Error deleting budget: ' + (error instanceof Error ? error.message : 'Unknown error'))
-        setDeletingId(null)
+        message.error(
+          'Error deleting budget: ' +
+            (error instanceof Error ? error.message : 'Unknown error')
+        );
+        setDeletingId(null);
       },
-    })
-  }
+    });
+  };
 
-  const handleToggleExpensePaid = (expenseId: string, currentPaidStatus: boolean) => {
+  const handleToggleExpensePaid = (
+    expenseId: string,
+    currentPaidStatus: boolean
+  ) => {
     updateExpense(
       {
         id: expenseId,
@@ -230,58 +286,66 @@ export function Budgets() {
       },
       {
         onSuccess: () => {
-          message.success(`Expense marked as ${!currentPaidStatus ? 'paid' : 'unpaid'}`)
+          message.success(
+            `Expense marked as ${!currentPaidStatus ? 'paid' : 'unpaid'}`
+          );
         },
         onError: (error: Error) => {
-          message.error('Error updating expense: ' + (error instanceof Error ? error.message : 'Unknown error'))
+          message.error(
+            'Error updating expense: ' +
+              (error instanceof Error ? error.message : 'Unknown error')
+          );
         },
       }
-    )
-  }
+    );
+  };
 
   const handleDeleteExpense = (expenseId: string) => {
     deleteExpense(expenseId, {
       onSuccess: () => {
-        message.success('Expense deleted successfully')
+        message.success('Expense deleted successfully');
       },
       onError: (error: Error) => {
-        message.error('Error deleting expense: ' + (error instanceof Error ? error.message : 'Unknown error'))
+        message.error(
+          'Error deleting expense: ' +
+            (error instanceof Error ? error.message : 'Unknown error')
+        );
       },
-    })
-  }
+    });
+  };
 
   const handleOpenEditExpenseModal = (expense: Expense) => {
     if (expense.is_paid) {
-      message.warning('Cannot edit paid expenses')
-      return
+      message.warning('Cannot edit paid expenses');
+      return;
     }
-    setEditingExpense(expense)
-    editExpenseForm.resetFields()
+    setEditingExpense(expense);
+    editExpenseForm.resetFields();
     editExpenseForm.setFieldsValue({
       description: expense.description,
       amount: expense.amount,
       category: expense.category,
       expense_date: dayjs(expense.expense_date),
-    })
-    setIsEditExpenseModalOpen(true)
-  }
+    });
+    setIsEditExpenseModalOpen(true);
+  };
 
   const handleCloseEditExpenseModal = () => {
-    setIsEditExpenseModalOpen(false)
-    setEditingExpense(null)
-    editExpenseForm.resetFields()
-  }
+    setIsEditExpenseModalOpen(false);
+    setEditingExpense(null);
+    editExpenseForm.resetFields();
+  };
 
   const handleSubmitEditExpense = async () => {
-    if (!editingExpense) return
+    if (!editingExpense) return;
 
     try {
-      const values = await editExpenseForm.validateFields()
-      const amount = values.amount
+      const values = await editExpenseForm.validateFields();
+      const amount = values.amount;
 
       if (isNaN(amount) || amount <= 0) {
-        message.error('Please enter a valid amount')
-        return
+        message.error('Please enter a valid amount');
+        return;
       }
 
       updateExpense(
@@ -296,45 +360,52 @@ export function Budgets() {
         },
         {
           onSuccess: () => {
-            message.success('Expense updated successfully')
-            handleCloseEditExpenseModal()
+            message.success('Expense updated successfully');
+            handleCloseEditExpenseModal();
           },
           onError: (error: Error) => {
-            message.error('Error updating expense: ' + (error instanceof Error ? error.message : 'Unknown error'))
+            message.error(
+              'Error updating expense: ' +
+                (error instanceof Error ? error.message : 'Unknown error')
+            );
           },
         }
-      )
+      );
     } catch (error) {
       // Form validation errors are handled by Ant Design
     }
-  }
+  };
 
   // Filter budgets based on search
   const filteredBudgets = useMemo(() => {
     return budgets.filter((budget) => {
       if (searchText) {
-        const searchLower = searchText.toLowerCase()
+        const searchLower = searchText.toLowerCase();
         if (!budget.name.toLowerCase().includes(searchLower)) {
-          return false
+          return false;
         }
       }
-      return true
-    })
-  }, [budgets, searchText])
+      return true;
+    });
+  }, [budgets, searchText]);
 
   // Get expenses for each budget
   const getBudgetExpenses = (budgetId: string) => {
-    return expenses?.filter((expense) => expense.budget_id === budgetId && expense.is_active) || []
-  }
+    return (
+      expenses?.filter(
+        (expense) => expense.budget_id === budgetId && expense.is_active
+      ) || []
+    );
+  };
 
   // Calculate remaining amount for each budget
   const getBudgetRemaining = (budget: Budget) => {
-    const budgetExpenses = getBudgetExpenses(budget.id)
+    const budgetExpenses = getBudgetExpenses(budget.id);
     const spentAmount = budgetExpenses
       .filter((expense) => expense.is_paid)
-      .reduce((sum, expense) => sum + expense.amount, 0)
-    return budget.amount - spentAmount
-  }
+      .reduce((sum, expense) => sum + expense.amount, 0);
+    return budget.amount - spentAmount;
+  };
 
   const columns = [
     {
@@ -354,7 +425,9 @@ export function Budgets() {
       key: 'amount',
       align: 'right' as const,
       render: (_: unknown, budget: Budget) => (
-        <div style={{ fontWeight: 600, color: '#2563eb' }}>{formatCurrency(budget.amount)}</div>
+        <div style={{ fontWeight: 600, color: '#2563eb' }}>
+          {formatCurrency(budget.amount)}
+        </div>
       ),
     },
     {
@@ -362,27 +435,28 @@ export function Budgets() {
       key: 'remaining',
       align: 'right' as const,
       render: (_: unknown, budget: Budget) => {
-        const remaining = getBudgetRemaining(budget)
+        const remaining = getBudgetRemaining(budget);
         return (
-          <div style={{ 
-            fontWeight: 600, 
-            color: remaining >= 0 ? '#16a34a' : '#dc2626' 
-          }}>
+          <div
+            style={{
+              fontWeight: 600,
+              color: remaining >= 0 ? '#16a34a' : '#dc2626',
+            }}
+          >
             {formatCurrency(remaining)}
           </div>
-        )
+        );
       },
     },
     {
       title: 'Status',
       key: 'status',
-      render: (_: unknown, budget: Budget) => (
+      render: (_: unknown, budget: Budget) =>
         budget.is_active ? (
           <span style={{ color: '#16a34a' }}>Active</span>
         ) : (
           <span style={{ color: '#9ca3af' }}>Inactive</span>
-        )
-      ),
+        ),
     },
     {
       title: 'Actions',
@@ -394,8 +468,8 @@ export function Budgets() {
             type="link"
             icon={<EyeOutlined />}
             onClick={() => {
-              setViewingBudget(budget)
-              setIsViewExpensesModalOpen(true)
+              setViewingBudget(budget);
+              setIsViewExpensesModalOpen(true);
             }}
           >
             View Expenses
@@ -433,23 +507,34 @@ export function Budgets() {
         </Space>
       ),
     },
-  ]
+  ];
 
   if (isLoading) {
     return (
       <div>
-        <Title level={2} style={{ marginBottom: 24 }}>Budgets</Title>
+        <Title level={2} style={{ marginBottom: 24 }}>
+          Budgets
+        </Title>
         <Card>
           <Skeleton active />
         </Card>
       </div>
-    )
+    );
   }
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
-        <Title level={2} style={{ margin: 0 }}>Budgets</Title>
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginBottom: 24,
+        }}
+      >
+        <Title level={2} style={{ margin: 0 }}>
+          Budgets
+        </Title>
         <Button
           type="primary"
           icon={<PlusOutlined />}
@@ -476,10 +561,20 @@ export function Budgets() {
 
       {/* Available Cash Info */}
       {profile && (
-        <Card style={{ marginBottom: 24, backgroundColor: '#f0fdf4', borderColor: '#22c55e' }}>
+        <Card
+          style={{
+            marginBottom: 24,
+            backgroundColor: '#f0fdf4',
+            borderColor: '#22c55e',
+          }}
+        >
           <Space direction="vertical" size="small" style={{ width: '100%' }}>
-            <div style={{ fontSize: '14px', color: '#6b7280' }}>Available Cash</div>
-            <div style={{ fontSize: '24px', fontWeight: 600, color: '#16a34a' }}>
+            <div style={{ fontSize: '14px', color: '#6b7280' }}>
+              Available Cash
+            </div>
+            <div
+              style={{ fontSize: '24px', fontWeight: 600, color: '#16a34a' }}
+            >
               {formatCurrency(profile.current_cash)}
             </div>
             <div style={{ fontSize: '12px', color: '#6b7280' }}>
@@ -492,7 +587,11 @@ export function Budgets() {
       {filteredBudgets.length === 0 ? (
         <Card>
           <Empty
-            description={searchText ? 'No budgets found matching your search' : 'No budgets yet'}
+            description={
+              searchText
+                ? 'No budgets found matching your search'
+                : 'No budgets yet'
+            }
           />
         </Card>
       ) : (
@@ -512,11 +611,7 @@ export function Budgets() {
         confirmLoading={isCreating || isUpdating}
         width={600}
       >
-        <Form
-          form={form}
-          layout="vertical"
-          onFinish={handleSubmit}
-        >
+        <Form form={form} layout="vertical" onFinish={handleSubmit}>
           <Form.Item
             name="name"
             label="Budget Name"
@@ -530,7 +625,11 @@ export function Budgets() {
             label="Amount"
             rules={[
               { required: true, message: 'Please enter an amount' },
-              { type: 'number', min: 0.01, message: 'Amount must be greater than 0' },
+              {
+                type: 'number',
+                min: 0.01,
+                message: 'Amount must be greater than 0',
+              },
             ]}
           >
             <InputNumber
@@ -549,16 +648,19 @@ export function Budgets() {
           >
             <DatePicker style={{ width: '100%' }} />
             <div style={{ fontSize: '12px', color: '#6b7280', marginTop: 4 }}>
-              This is the date when the budget will appear in the Cash Flow calendar
+              This is the date when the budget will appear in the Cash Flow
+              calendar
             </div>
           </Form.Item>
 
-          <Form.Item
-            name="is_active"
-            valuePropName="checked"
-          >
+          <Form.Item name="is_active" valuePropName="checked">
             <div>
-              <input type="checkbox" checked={form.getFieldValue('is_active')} readOnly style={{ marginRight: 8 }} />
+              <input
+                type="checkbox"
+                checked={form.getFieldValue('is_active')}
+                readOnly
+                style={{ marginRight: 8 }}
+              />
               <span>Active</span>
             </div>
             <div style={{ fontSize: '12px', color: '#6b7280', marginTop: 4 }}>
@@ -567,14 +669,20 @@ export function Budgets() {
           </Form.Item>
 
           {!editingBudget && profile && (
-            <div style={{ 
-              padding: '12px', 
-              backgroundColor: '#fef3c7', 
-              borderRadius: '4px',
-              marginTop: 16,
-              fontSize: '14px'
-            }}>
-              <strong>Note:</strong> Creating this budget will deduct {form.getFieldValue('amount') ? formatCurrency(form.getFieldValue('amount')) : 'the amount'} from your available cash ({formatCurrency(profile.current_cash)}).
+            <div
+              style={{
+                padding: '12px',
+                backgroundColor: '#fef3c7',
+                borderRadius: '4px',
+                marginTop: 16,
+                fontSize: '14px',
+              }}
+            >
+              <strong>Note:</strong> Creating this budget will deduct{' '}
+              {form.getFieldValue('amount')
+                ? formatCurrency(form.getFieldValue('amount'))
+                : 'the amount'}{' '}
+              from your available cash ({formatCurrency(profile.current_cash)}).
             </div>
           )}
         </Form>
@@ -582,84 +690,85 @@ export function Budgets() {
 
       {/* Expense Creation Modal */}
       <Modal
-        title={`Add Expense to ${selectedBudgetForExpense?.name || 'Budget'}`}
+        title={`Add Expenses to ${selectedBudgetForExpense?.name || 'Budget'}`}
         open={isExpenseModalOpen}
         onCancel={handleCloseExpenseModal}
         onOk={expenseForm.submit}
         confirmLoading={isCreatingExpense}
-        okText="Create Expense"
+        okText="Create Expenses"
         cancelText="Cancel"
-        width={600}
+        width={700}
       >
         <Form
           form={expenseForm}
           layout="vertical"
           onFinish={handleSubmitExpense}
         >
-          <Form.Item
-            name="description"
-            label="Description"
-            rules={[{ required: true, message: 'Please enter a description' }]}
-          >
-            <Input placeholder="e.g., Groceries, Coffee, Uber ride" />
-          </Form.Item>
-
-          <Form.Item
-            name="amount"
-            label="Amount (₱)"
-            rules={[
-              { required: true, message: 'Please enter an amount' },
-              { type: 'number', min: 0.01, message: 'Amount must be greater than 0' },
-            ]}
-          >
-            <InputNumber
-              style={{ width: '100%' }}
-              prefix="₱"
-              step={0.01}
-              min={0}
-              placeholder="0.00"
-            />
-          </Form.Item>
-
-          <Form.Item
-            name="category"
-            label="Category (Optional)"
-          >
-            <Select placeholder="Select a category" allowClear>
-              {expenseCategories.map((cat) => (
-                <Option key={cat} value={cat}>
-                  {cat}
-                </Option>
-              ))}
-            </Select>
-          </Form.Item>
-
           <Form.Item name="budget_id" hidden>
             <Input />
           </Form.Item>
 
-          <Form.Item name="frequency" hidden initialValue="one_time">
-            <Input />
-          </Form.Item>
-
-          <Form.Item
-            name="expense_date"
-            label="Date"
-            rules={[{ required: true, message: 'Please select a date' }]}
-          >
-            <DatePicker style={{ width: '100%' }} />
-          </Form.Item>
-
-          <Form.Item
-            name="is_paid"
-            valuePropName="checked"
-            label="Paid"
-          >
-            <Switch />
-            <div style={{ fontSize: '12px', color: '#6b7280', marginTop: 4 }}>
-              Mark as paid if you've already paid this expense. Unpaid expenses won't deduct from the budget amount.
-            </div>
-          </Form.Item>
+          <Form.List name="expenses">
+            {(fields, { add, remove }) => (
+              <>
+                {fields.map(({ key, name, ...restField }) => (
+                  <Space
+                    key={key}
+                    style={{ display: 'flex', marginBottom: 8 }}
+                    align="baseline"
+                  >
+                    <Form.Item
+                      {...restField}
+                      name={[name, 'description']}
+                      rules={[
+                        { required: true, message: 'Description required' },
+                      ]}
+                      style={{ flex: 1, marginBottom: 0 }}
+                    >
+                      <Input placeholder="Description" />
+                    </Form.Item>
+                    <Form.Item
+                      {...restField}
+                      name={[name, 'amount']}
+                      rules={[
+                        { required: true, message: 'Amount required' },
+                        { type: 'number', min: 0.01, message: 'Must be > 0' },
+                      ]}
+                      style={{ width: 150, marginBottom: 0 }}
+                    >
+                      <InputNumber
+                        prefix="₱"
+                        step={0.01}
+                        min={0}
+                        placeholder="0.00"
+                        style={{ width: '100%' }}
+                      />
+                    </Form.Item>
+                    {fields.length > 1 && (
+                      <MinusCircleOutlined
+                        onClick={() => remove(name)}
+                        style={{
+                          color: '#dc2626',
+                          fontSize: '18px',
+                          cursor: 'pointer',
+                        }}
+                      />
+                    )}
+                  </Space>
+                ))}
+                <Form.Item>
+                  <Button
+                    type="dashed"
+                    onClick={() => add()}
+                    block
+                    icon={<PlusOutlined />}
+                  >
+                    Add Expense
+                  </Button>
+                </Form.Item>
+              </>
+            )}
+          </Form.List>
         </Form>
       </Modal>
 
@@ -668,137 +777,161 @@ export function Budgets() {
         title={`${viewingBudget?.name || 'Budget'} Expenses`}
         open={isViewExpensesModalOpen}
         onCancel={() => {
-          setIsViewExpensesModalOpen(false)
-          setViewingBudget(null)
+          setIsViewExpensesModalOpen(false);
+          setViewingBudget(null);
         }}
         footer={[
-          <Button key="close" onClick={() => {
-            setIsViewExpensesModalOpen(false)
-            setViewingBudget(null)
-          }}>
+          <Button
+            key="close"
+            onClick={() => {
+              setIsViewExpensesModalOpen(false);
+              setViewingBudget(null);
+            }}
+          >
             Close
-          </Button>
+          </Button>,
         ]}
         width={700}
       >
-        {viewingBudget && (() => {
-          const budgetExpenses = getBudgetExpenses(viewingBudget.id)
-          const remaining = getBudgetRemaining(viewingBudget)
-          
-          if (budgetExpenses.length === 0) {
-            return (
-              <Empty 
-                description="No expenses yet" 
-                image={Empty.PRESENTED_IMAGE_SIMPLE}
-              />
-            )
-          }
+        {viewingBudget &&
+          (() => {
+            const budgetExpenses = getBudgetExpenses(viewingBudget.id);
+            const remaining = getBudgetRemaining(viewingBudget);
 
-          return (
-            <Space direction="vertical" style={{ width: '100%' }} size="middle">
-              <div style={{ 
-                display: 'flex', 
-                justifyContent: 'space-between', 
-                alignItems: 'center',
-                padding: '12px',
-                backgroundColor: '#f5f5f5',
-                borderRadius: '4px'
-              }}>
-                <Space direction="vertical" size={0}>
-                  <Text type="secondary" style={{ fontSize: '12px' }}>Total Budget</Text>
-                  <Text strong style={{ fontSize: '16px' }}>{formatCurrency(viewingBudget.amount)}</Text>
-                </Space>
-                <Space direction="vertical" size={0} align="end">
-                  <Text type="secondary" style={{ fontSize: '12px' }}>Spent</Text>
-                  <Text strong style={{ fontSize: '16px', color: '#dc2626' }}>
-                    {formatCurrency(viewingBudget.amount - remaining)}
-                  </Text>
-                </Space>
-                <Space direction="vertical" size={0} align="end">
-                  <Text type="secondary" style={{ fontSize: '12px' }}>Remaining</Text>
-                  <Text 
-                    strong 
-                    style={{ 
-                      fontSize: '16px',
-                      color: remaining >= 0 ? '#16a34a' : '#dc2626'
-                    }}
-                  >
-                    {formatCurrency(remaining)}
-                  </Text>
-                </Space>
-              </div>
-              <List
-                dataSource={budgetExpenses}
-                renderItem={(expense) => (
-                  <List.Item
-                    style={{
-                      padding: '12px 0',
-                      borderBottom: '1px solid #f0f0f0',
-                    }}
-                  >
-                    <List.Item.Meta
-                      avatar={
-                        <Checkbox 
-                          checked={expense.is_paid} 
-                          onChange={() => handleToggleExpensePaid(expense.id, expense.is_paid)}
-                        />
-                      }
-                      title={
-                        <Space>
-                          <Text delete={expense.is_paid} strong={!expense.is_paid}>
-                            {expense.description}
+            if (budgetExpenses.length === 0) {
+              return (
+                <Empty
+                  description="No expenses yet"
+                  image={Empty.PRESENTED_IMAGE_SIMPLE}
+                />
+              );
+            }
+
+            return (
+              <Space
+                direction="vertical"
+                style={{ width: '100%' }}
+                size="middle"
+              >
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    padding: '12px',
+                    backgroundColor: '#f5f5f5',
+                    borderRadius: '4px',
+                  }}
+                >
+                  <Space direction="vertical" size={0}>
+                    <Text type="secondary" style={{ fontSize: '12px' }}>
+                      Total Budget
+                    </Text>
+                    <Text strong style={{ fontSize: '16px' }}>
+                      {formatCurrency(viewingBudget.amount)}
+                    </Text>
+                  </Space>
+                  <Space direction="vertical" size={0} align="end">
+                    <Text type="secondary" style={{ fontSize: '12px' }}>
+                      Spent
+                    </Text>
+                    <Text strong style={{ fontSize: '16px', color: '#dc2626' }}>
+                      {formatCurrency(viewingBudget.amount - remaining)}
+                    </Text>
+                  </Space>
+                  <Space direction="vertical" size={0} align="end">
+                    <Text type="secondary" style={{ fontSize: '12px' }}>
+                      Remaining
+                    </Text>
+                    <Text
+                      strong
+                      style={{
+                        fontSize: '16px',
+                        color: remaining >= 0 ? '#16a34a' : '#dc2626',
+                      }}
+                    >
+                      {formatCurrency(remaining)}
+                    </Text>
+                  </Space>
+                </div>
+                <List
+                  dataSource={budgetExpenses}
+                  renderItem={(expense) => (
+                    <List.Item
+                      style={{
+                        padding: '12px 0',
+                        borderBottom: '1px solid #f0f0f0',
+                      }}
+                    >
+                      <List.Item.Meta
+                        avatar={
+                          <Checkbox
+                            checked={expense.is_paid}
+                            onChange={() =>
+                              handleToggleExpensePaid(
+                                expense.id,
+                                expense.is_paid
+                              )
+                            }
+                          />
+                        }
+                        title={
+                          <Space>
+                            <Text
+                              delete={expense.is_paid}
+                              strong={!expense.is_paid}
+                            >
+                              {expense.description}
+                            </Text>
+                            {expense.category && <Tag>{expense.category}</Tag>}
+                          </Space>
+                        }
+                        description={
+                          <Text type="secondary" style={{ fontSize: '12px' }}>
+                            {formatDate(expense.expense_date)}
                           </Text>
-                          {expense.category && (
-                            <Tag>{expense.category}</Tag>
-                          )}
-                        </Space>
-                      }
-                      description={
-                        <Text type="secondary" style={{ fontSize: '12px' }}>
-                          {formatDate(expense.expense_date)}
+                        }
+                      />
+                      <Space>
+                        <Text
+                          strong
+                          delete={expense.is_paid}
+                          style={{
+                            color: expense.is_paid ? '#9ca3af' : '#dc2626',
+                          }}
+                        >
+                          -{formatCurrency(expense.amount)}
                         </Text>
-                      }
-                    />
-                    <Space>
-                      <Text
-                        strong
-                        delete={expense.is_paid}
-                        style={{
-                          color: expense.is_paid ? '#9ca3af' : '#dc2626',
-                        }}
-                      >
-                        -{formatCurrency(expense.amount)}
-                      </Text>
-                      {!expense.is_paid && (
-                        <Button
-                          type="text"
-                          size="small"
-                          icon={<EditOutlined />}
-                          onClick={() => handleOpenEditExpenseModal(expense)}
-                          style={{ color: '#1890ff' }}
-                        />
-                      )}
-                      <Popconfirm
-                        title="Delete expense"
-                        description="Are you sure you want to delete this expense?"
-                        onConfirm={() => handleDeleteExpense(expense.id)}
-                        okText="Yes"
-                        cancelText="No"
-                      >
-                        <Button
-                          type="text"
-                          danger
-                          size="small"
-                          icon={<DeleteOutlined />}
-                        />
-                      </Popconfirm>
-                    </Space>
-                  </List.Item>
-                )}
-              />
-            </Space>
-          )
-        })()}
+                        {!expense.is_paid && (
+                          <Button
+                            type="text"
+                            size="small"
+                            icon={<EditOutlined />}
+                            onClick={() => handleOpenEditExpenseModal(expense)}
+                            style={{ color: '#1890ff' }}
+                          />
+                        )}
+                        <Popconfirm
+                          title="Delete expense"
+                          description="Are you sure you want to delete this expense?"
+                          onConfirm={() => handleDeleteExpense(expense.id)}
+                          okText="Yes"
+                          cancelText="No"
+                        >
+                          <Button
+                            type="text"
+                            danger
+                            size="small"
+                            icon={<DeleteOutlined />}
+                          />
+                        </Popconfirm>
+                      </Space>
+                    </List.Item>
+                  )}
+                />
+              </Space>
+            );
+          })()}
       </Modal>
 
       {/* Edit Budget Expense Modal */}
@@ -830,7 +963,11 @@ export function Budgets() {
             label="Amount (₱)"
             rules={[
               { required: true, message: 'Please enter an amount' },
-              { type: 'number', min: 0.01, message: 'Amount must be greater than 0' },
+              {
+                type: 'number',
+                min: 0.01,
+                message: 'Amount must be greater than 0',
+              },
             ]}
           >
             <InputNumber
@@ -842,10 +979,7 @@ export function Budgets() {
             />
           </Form.Item>
 
-          <Form.Item
-            name="category"
-            label="Category (Optional)"
-          >
+          <Form.Item name="category" label="Category (Optional)">
             <Select placeholder="Select a category" allowClear>
               {expenseCategories.map((cat) => (
                 <Option key={cat} value={cat}>
@@ -865,6 +999,5 @@ export function Budgets() {
         </Form>
       </Modal>
     </div>
-  )
+  );
 }
-
