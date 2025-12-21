@@ -43,6 +43,7 @@ import {
   FilterOutlined,
   EditOutlined,
   PlusOutlined,
+  MinusCircleOutlined,
 } from '@ant-design/icons';
 import type { MenuProps } from 'antd';
 
@@ -1906,28 +1907,53 @@ export function CashFlow() {
 
     try {
       const values = await budgetExpenseForm.validateFields();
-      const amount = values.amount;
+      const expenses = values.expenses || [];
+      const budgetId = values.budget_id;
 
-      if (isNaN(amount) || amount <= 0) {
-        message.error('Please enter a valid amount');
+      if (expenses.length === 0) {
+        message.error('Please add at least one expense');
         return;
       }
 
-      const input = {
-        description: values.description,
-        amount,
-        category: values.category || null,
-        expense_date: (values.expense_date as Dayjs).format('YYYY-MM-DD'),
-        frequency: 'one_time' as const,
-        due_date: null,
-        start_date: null,
-        budget_id: values.budget_id || null,
-        is_active: true,
-        is_paid: values.is_paid ?? false,
-      };
+      // Filter out empty expenses
+      const validExpenses = expenses.filter(
+        (exp: { description: string; amount: number | undefined }) =>
+          exp.description &&
+          exp.description.trim() &&
+          exp.amount &&
+          exp.amount > 0
+      );
 
-      await createExpenseAsync(input);
-      message.success('Expense created successfully');
+      if (validExpenses.length === 0) {
+        message.error('Please enter at least one valid expense');
+        return;
+      }
+
+      // Create all expenses
+      const today = new Date().toISOString().split('T')[0];
+      const promises = validExpenses.map(
+        (exp: { description: string; amount: number }) =>
+          createExpenseAsync({
+            description: exp.description.trim(),
+            amount: exp.amount,
+            category: 'Other', // Default to "Other"
+            expense_date: today, // Default to today
+            frequency: 'one_time',
+            due_date: null,
+            start_date: null,
+            budget_id: budgetId,
+            is_active: true,
+            is_paid: false, // Default to unpaid
+          })
+      );
+
+      // Wait for all expenses to be created
+      await Promise.all(promises);
+      message.success(
+        `Successfully created ${validExpenses.length} expense${
+          validExpenses.length > 1 ? 's' : ''
+        }`
+      );
       setSelectedBudgetForExpense(null);
       budgetExpenseForm.resetFields();
     } catch (error) {
@@ -3139,11 +3165,12 @@ export function CashFlow() {
                                                 budgetExpenseForm.setFieldsValue(
                                                   {
                                                     budget_id: budget.id,
-                                                    frequency: 'one_time',
-                                                    expense_date: dayjs(
-                                                      new Date(year, month, 1)
-                                                    ),
-                                                    is_paid: false,
+                                                    expenses: [
+                                                      {
+                                                        description: '',
+                                                        amount: undefined,
+                                                      },
+                                                    ], // Start with one empty expense
                                                   }
                                                 );
                                               }
@@ -3691,7 +3718,7 @@ export function CashFlow() {
 
       {/* Budget Expense Creation Modal */}
       <Modal
-        title={`Add Expense to ${
+        title={`Add Expenses to ${
           selectedBudgetForExpense?.budget.name || 'Budget'
         }`}
         open={!!selectedBudgetForExpense}
@@ -3700,83 +3727,80 @@ export function CashFlow() {
           budgetExpenseForm.resetFields();
         }}
         onOk={budgetExpenseForm.submit}
-        okText="Create Expense"
+        okText="Create Expenses"
         cancelText="Cancel"
-        width={600}
+        width={700}
       >
         <Form
           form={budgetExpenseForm}
           layout="vertical"
           onFinish={handleSubmitBudgetExpense}
         >
-          <Form.Item
-            name="description"
-            label="Description"
-            rules={[{ required: true, message: 'Please enter a description' }]}
-          >
-            <Input placeholder="e.g., Groceries, Coffee, Uber ride" />
-          </Form.Item>
-
-          <Form.Item
-            name="amount"
-            label="Amount (₱)"
-            rules={[
-              { required: true, message: 'Please enter an amount' },
-              {
-                type: 'number',
-                min: 0.01,
-                message: 'Amount must be greater than 0',
-              },
-            ]}
-          >
-            <InputNumber
-              style={{ width: '100%' }}
-              prefix="₱"
-              step={0.01}
-              min={0}
-              placeholder="0.00"
-            />
-          </Form.Item>
-
-          <Form.Item name="category" label="Category (Optional)">
-            <Select placeholder="Select a category" allowClear>
-              {expenseCategories.map((cat) => (
-                <Option key={cat} value={cat}>
-                  {cat}
-                </Option>
-              ))}
-            </Select>
-          </Form.Item>
-
           <Form.Item name="budget_id" hidden>
             <Input />
           </Form.Item>
 
-          <Form.Item name="frequency" hidden initialValue="one_time">
-            <Input />
-          </Form.Item>
-
-          <Form.Item
-            name="expense_date"
-            label="Date"
-            rules={[{ required: true, message: 'Please select a date' }]}
-          >
-            <DatePicker style={{ width: '100%' }} />
-          </Form.Item>
-
-          <Form.Item name="is_paid" valuePropName="checked" label="Paid">
-            <Switch />
-            <div
-              style={{
-                fontSize: '12px',
-                color: '#6b7280',
-                marginTop: 4,
-              }}
-            >
-              Mark as paid if you've already paid this expense. Unpaid expenses
-              won't deduct from the budget amount.
-            </div>
-          </Form.Item>
+          <Form.List name="expenses">
+            {(fields, { add, remove }) => (
+              <>
+                {fields.map(({ key, name, ...restField }) => (
+                  <Space
+                    key={key}
+                    style={{ display: 'flex', marginBottom: 8 }}
+                    align="baseline"
+                  >
+                    <Form.Item
+                      {...restField}
+                      name={[name, 'description']}
+                      rules={[
+                        { required: true, message: 'Description required' },
+                      ]}
+                      style={{ flex: 1, marginBottom: 0 }}
+                    >
+                      <Input placeholder="Description" />
+                    </Form.Item>
+                    <Form.Item
+                      {...restField}
+                      name={[name, 'amount']}
+                      rules={[
+                        { required: true, message: 'Amount required' },
+                        { type: 'number', min: 0.01, message: 'Must be > 0' },
+                      ]}
+                      style={{ width: 150, marginBottom: 0 }}
+                    >
+                      <InputNumber
+                        prefix="₱"
+                        step={0.01}
+                        min={0}
+                        placeholder="0.00"
+                        style={{ width: '100%' }}
+                      />
+                    </Form.Item>
+                    {fields.length > 1 && (
+                      <MinusCircleOutlined
+                        onClick={() => remove(name)}
+                        style={{
+                          color: '#dc2626',
+                          fontSize: '18px',
+                          cursor: 'pointer',
+                        }}
+                      />
+                    )}
+                  </Space>
+                ))}
+                <Form.Item>
+                  <Button
+                    type="dashed"
+                    onClick={() => add()}
+                    block
+                    icon={<PlusOutlined />}
+                  >
+                    Add Expense
+                  </Button>
+                </Form.Item>
+              </>
+            )}
+          </Form.List>
         </Form>
       </Modal>
     </Space>
