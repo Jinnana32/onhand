@@ -15,15 +15,18 @@ import {
   Card,
   Skeleton,
   Select,
-  Switch
+  Switch,
+  List,
+  Tag,
+  Checkbox
 } from 'antd'
-import { PlusOutlined, EditOutlined, DeleteOutlined, SearchOutlined, ShoppingOutlined } from '@ant-design/icons'
+import { PlusOutlined, EditOutlined, DeleteOutlined, SearchOutlined, ShoppingOutlined, EyeOutlined } from '@ant-design/icons'
 import dayjs, { Dayjs } from 'dayjs'
 import { useBudgets, useProfile, useExpenses } from '../hooks'
-import { Budget } from '../types/database.types'
+import { Budget, Expense } from '../types/database.types'
 import { formatCurrency, formatDate } from '../lib/utils'
 
-const { Title } = Typography
+const { Title, Text } = Typography
 const { Option } = Select
 
 const expenseCategories = [
@@ -48,13 +51,18 @@ export function Budgets() {
     isUpdating,
   } = useBudgets()
   const { profile } = useProfile()
-  const { createExpense, isCreating: isCreatingExpense } = useExpenses()
+  const { expenses, createExpense, updateExpense, deleteExpense, isCreating: isCreatingExpense, isUpdating: isUpdatingExpense } = useExpenses()
   const [form] = Form.useForm()
   const [expenseForm] = Form.useForm()
+  const [editExpenseForm] = Form.useForm()
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [isExpenseModalOpen, setIsExpenseModalOpen] = useState(false)
+  const [isViewExpensesModalOpen, setIsViewExpensesModalOpen] = useState(false)
+  const [isEditExpenseModalOpen, setIsEditExpenseModalOpen] = useState(false)
   const [editingBudget, setEditingBudget] = useState<Budget | null>(null)
   const [selectedBudgetForExpense, setSelectedBudgetForExpense] = useState<Budget | null>(null)
+  const [viewingBudget, setViewingBudget] = useState<Budget | null>(null)
+  const [editingExpense, setEditingExpense] = useState<Expense | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [searchText, setSearchText] = useState('')
 
@@ -214,6 +222,93 @@ export function Budgets() {
     })
   }
 
+  const handleToggleExpensePaid = (expenseId: string, currentPaidStatus: boolean) => {
+    updateExpense(
+      {
+        id: expenseId,
+        updates: { is_paid: !currentPaidStatus },
+      },
+      {
+        onSuccess: () => {
+          message.success(`Expense marked as ${!currentPaidStatus ? 'paid' : 'unpaid'}`)
+        },
+        onError: (error: Error) => {
+          message.error('Error updating expense: ' + (error instanceof Error ? error.message : 'Unknown error'))
+        },
+      }
+    )
+  }
+
+  const handleDeleteExpense = (expenseId: string) => {
+    deleteExpense(expenseId, {
+      onSuccess: () => {
+        message.success('Expense deleted successfully')
+      },
+      onError: (error: Error) => {
+        message.error('Error deleting expense: ' + (error instanceof Error ? error.message : 'Unknown error'))
+      },
+    })
+  }
+
+  const handleOpenEditExpenseModal = (expense: Expense) => {
+    if (expense.is_paid) {
+      message.warning('Cannot edit paid expenses')
+      return
+    }
+    setEditingExpense(expense)
+    editExpenseForm.resetFields()
+    editExpenseForm.setFieldsValue({
+      description: expense.description,
+      amount: expense.amount,
+      category: expense.category,
+      expense_date: dayjs(expense.expense_date),
+    })
+    setIsEditExpenseModalOpen(true)
+  }
+
+  const handleCloseEditExpenseModal = () => {
+    setIsEditExpenseModalOpen(false)
+    setEditingExpense(null)
+    editExpenseForm.resetFields()
+  }
+
+  const handleSubmitEditExpense = async () => {
+    if (!editingExpense) return
+
+    try {
+      const values = await editExpenseForm.validateFields()
+      const amount = values.amount
+
+      if (isNaN(amount) || amount <= 0) {
+        message.error('Please enter a valid amount')
+        return
+      }
+
+      updateExpense(
+        {
+          id: editingExpense.id,
+          updates: {
+            description: values.description,
+            amount,
+            category: values.category || null,
+            expense_date: (values.expense_date as Dayjs).format('YYYY-MM-DD'),
+          },
+        },
+        {
+          onSuccess: () => {
+            message.success('Expense updated successfully')
+            handleCloseEditExpenseModal()
+          },
+          onError: (error: Error) => {
+            message.error('Error updating expense: ' + (error instanceof Error ? error.message : 'Unknown error'))
+          },
+        }
+      )
+    } catch (error) {
+      // Form validation errors are handled by Ant Design
+    }
+  }
+
   // Filter budgets based on search
   const filteredBudgets = useMemo(() => {
     return budgets.filter((budget) => {
@@ -226,6 +321,20 @@ export function Budgets() {
       return true
     })
   }, [budgets, searchText])
+
+  // Get expenses for each budget
+  const getBudgetExpenses = (budgetId: string) => {
+    return expenses?.filter((expense) => expense.budget_id === budgetId && expense.is_active) || []
+  }
+
+  // Calculate remaining amount for each budget
+  const getBudgetRemaining = (budget: Budget) => {
+    const budgetExpenses = getBudgetExpenses(budget.id)
+    const spentAmount = budgetExpenses
+      .filter((expense) => expense.is_paid)
+      .reduce((sum, expense) => sum + expense.amount, 0)
+    return budget.amount - spentAmount
+  }
 
   const columns = [
     {
@@ -249,6 +358,22 @@ export function Budgets() {
       ),
     },
     {
+      title: 'Remaining',
+      key: 'remaining',
+      align: 'right' as const,
+      render: (_: unknown, budget: Budget) => {
+        const remaining = getBudgetRemaining(budget)
+        return (
+          <div style={{ 
+            fontWeight: 600, 
+            color: remaining >= 0 ? '#16a34a' : '#dc2626' 
+          }}>
+            {formatCurrency(remaining)}
+          </div>
+        )
+      },
+    },
+    {
       title: 'Status',
       key: 'status',
       render: (_: unknown, budget: Budget) => (
@@ -265,6 +390,16 @@ export function Budgets() {
       align: 'right' as const,
       render: (_: unknown, budget: Budget) => (
         <Space>
+          <Button
+            type="link"
+            icon={<EyeOutlined />}
+            onClick={() => {
+              setViewingBudget(budget)
+              setIsViewExpensesModalOpen(true)
+            }}
+          >
+            View Expenses
+          </Button>
           <Button
             type="link"
             icon={<ShoppingOutlined />}
@@ -524,6 +659,208 @@ export function Budgets() {
             <div style={{ fontSize: '12px', color: '#6b7280', marginTop: 4 }}>
               Mark as paid if you've already paid this expense. Unpaid expenses won't deduct from the budget amount.
             </div>
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      {/* View Budget Expenses Modal */}
+      <Modal
+        title={`${viewingBudget?.name || 'Budget'} Expenses`}
+        open={isViewExpensesModalOpen}
+        onCancel={() => {
+          setIsViewExpensesModalOpen(false)
+          setViewingBudget(null)
+        }}
+        footer={[
+          <Button key="close" onClick={() => {
+            setIsViewExpensesModalOpen(false)
+            setViewingBudget(null)
+          }}>
+            Close
+          </Button>
+        ]}
+        width={700}
+      >
+        {viewingBudget && (() => {
+          const budgetExpenses = getBudgetExpenses(viewingBudget.id)
+          const remaining = getBudgetRemaining(viewingBudget)
+          
+          if (budgetExpenses.length === 0) {
+            return (
+              <Empty 
+                description="No expenses yet" 
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+              />
+            )
+          }
+
+          return (
+            <Space direction="vertical" style={{ width: '100%' }} size="middle">
+              <div style={{ 
+                display: 'flex', 
+                justifyContent: 'space-between', 
+                alignItems: 'center',
+                padding: '12px',
+                backgroundColor: '#f5f5f5',
+                borderRadius: '4px'
+              }}>
+                <Space direction="vertical" size={0}>
+                  <Text type="secondary" style={{ fontSize: '12px' }}>Total Budget</Text>
+                  <Text strong style={{ fontSize: '16px' }}>{formatCurrency(viewingBudget.amount)}</Text>
+                </Space>
+                <Space direction="vertical" size={0} align="end">
+                  <Text type="secondary" style={{ fontSize: '12px' }}>Spent</Text>
+                  <Text strong style={{ fontSize: '16px', color: '#dc2626' }}>
+                    {formatCurrency(viewingBudget.amount - remaining)}
+                  </Text>
+                </Space>
+                <Space direction="vertical" size={0} align="end">
+                  <Text type="secondary" style={{ fontSize: '12px' }}>Remaining</Text>
+                  <Text 
+                    strong 
+                    style={{ 
+                      fontSize: '16px',
+                      color: remaining >= 0 ? '#16a34a' : '#dc2626'
+                    }}
+                  >
+                    {formatCurrency(remaining)}
+                  </Text>
+                </Space>
+              </div>
+              <List
+                dataSource={budgetExpenses}
+                renderItem={(expense) => (
+                  <List.Item
+                    style={{
+                      padding: '12px 0',
+                      borderBottom: '1px solid #f0f0f0',
+                    }}
+                  >
+                    <List.Item.Meta
+                      avatar={
+                        <Checkbox 
+                          checked={expense.is_paid} 
+                          onChange={() => handleToggleExpensePaid(expense.id, expense.is_paid)}
+                        />
+                      }
+                      title={
+                        <Space>
+                          <Text delete={expense.is_paid} strong={!expense.is_paid}>
+                            {expense.description}
+                          </Text>
+                          {expense.category && (
+                            <Tag>{expense.category}</Tag>
+                          )}
+                        </Space>
+                      }
+                      description={
+                        <Text type="secondary" style={{ fontSize: '12px' }}>
+                          {formatDate(expense.expense_date)}
+                        </Text>
+                      }
+                    />
+                    <Space>
+                      <Text
+                        strong
+                        delete={expense.is_paid}
+                        style={{
+                          color: expense.is_paid ? '#9ca3af' : '#dc2626',
+                        }}
+                      >
+                        -{formatCurrency(expense.amount)}
+                      </Text>
+                      {!expense.is_paid && (
+                        <Button
+                          type="text"
+                          size="small"
+                          icon={<EditOutlined />}
+                          onClick={() => handleOpenEditExpenseModal(expense)}
+                          style={{ color: '#1890ff' }}
+                        />
+                      )}
+                      <Popconfirm
+                        title="Delete expense"
+                        description="Are you sure you want to delete this expense?"
+                        onConfirm={() => handleDeleteExpense(expense.id)}
+                        okText="Yes"
+                        cancelText="No"
+                      >
+                        <Button
+                          type="text"
+                          danger
+                          size="small"
+                          icon={<DeleteOutlined />}
+                        />
+                      </Popconfirm>
+                    </Space>
+                  </List.Item>
+                )}
+              />
+            </Space>
+          )
+        })()}
+      </Modal>
+
+      {/* Edit Budget Expense Modal */}
+      <Modal
+        title="Edit Expense"
+        open={isEditExpenseModalOpen}
+        onCancel={handleCloseEditExpenseModal}
+        onOk={editExpenseForm.submit}
+        confirmLoading={isUpdatingExpense}
+        okText="Update Expense"
+        cancelText="Cancel"
+        width={600}
+      >
+        <Form
+          form={editExpenseForm}
+          layout="vertical"
+          onFinish={handleSubmitEditExpense}
+        >
+          <Form.Item
+            name="description"
+            label="Description"
+            rules={[{ required: true, message: 'Please enter a description' }]}
+          >
+            <Input placeholder="e.g., Groceries, Coffee, Uber ride" />
+          </Form.Item>
+
+          <Form.Item
+            name="amount"
+            label="Amount (₱)"
+            rules={[
+              { required: true, message: 'Please enter an amount' },
+              { type: 'number', min: 0.01, message: 'Amount must be greater than 0' },
+            ]}
+          >
+            <InputNumber
+              style={{ width: '100%' }}
+              prefix="₱"
+              step={0.01}
+              min={0}
+              placeholder="0.00"
+            />
+          </Form.Item>
+
+          <Form.Item
+            name="category"
+            label="Category (Optional)"
+          >
+            <Select placeholder="Select a category" allowClear>
+              {expenseCategories.map((cat) => (
+                <Option key={cat} value={cat}>
+                  {cat}
+                </Option>
+              ))}
+            </Select>
+          </Form.Item>
+
+          <Form.Item
+            name="expense_date"
+            label="Date"
+            rules={[{ required: true, message: 'Please select a date' }]}
+          >
+            <DatePicker style={{ width: '100%' }} />
           </Form.Item>
         </Form>
       </Modal>
