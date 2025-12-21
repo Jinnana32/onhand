@@ -58,6 +58,7 @@ export function CashFlow() {
     expenses,
     isLoading: isLoadingExpenses,
     createExpenseAsync,
+    updateExpense,
   } = useExpenses();
   const {
     incomeSources,
@@ -203,6 +204,7 @@ export function CashFlow() {
       dueDate: Date;
       isPaid: boolean;
       isReceived?: boolean; // For income: whether it has been received
+      frequency?: 'monthly' | 'weekly' | 'one_time'; // For expenses: frequency type
       liability?: { start_date: string | null; months_to_pay: number | null }; // For payment counter
     }> = [];
     const selectedMonthDate = new Date(selectedYear, selectedMonth, 1);
@@ -316,7 +318,7 @@ export function CashFlow() {
             amount: expense.amount,
             category: expense.category || 'Bills',
             dueDate,
-            isPaid: false, // Recurring expenses are tracked differently
+            isPaid: expense.is_paid || false,
           });
         }
       });
@@ -345,7 +347,8 @@ export function CashFlow() {
             amount: expense.amount,
             category: expense.category || 'Bills',
             dueDate: expenseDate,
-            isPaid: true, // One-time expenses are already paid when logged
+            isPaid: expense.is_paid !== undefined ? expense.is_paid : true, // Default to paid for one-time expenses
+            frequency: expense.frequency,
           });
         }
       });
@@ -813,6 +816,7 @@ export function CashFlow() {
         dueDate: Date;
         isPaid: boolean;
         isReceived?: boolean; // For income: whether it has been received
+        frequency?: 'monthly' | 'weekly' | 'one_time'; // For expenses: frequency type
         liability?: { start_date: string | null; months_to_pay: number | null }; // For payment counter
       }>
     > = {};
@@ -933,7 +937,8 @@ export function CashFlow() {
               amount: expense.amount,
               category: expense.category || 'Bills',
               dueDate,
-              isPaid: false, // Recurring expenses are tracked differently
+              isPaid: expense.is_paid || false,
+              frequency: expense.frequency,
             });
           }
         });
@@ -968,7 +973,8 @@ export function CashFlow() {
             amount: expense.amount,
             category: expense.category || 'Bills',
             dueDate: expenseDate,
-            isPaid: true, // One-time expenses are already paid when logged
+            isPaid: expense.is_paid !== undefined ? expense.is_paid : true, // Default to paid for one-time expenses
+            frequency: expense.frequency,
           });
         });
       }
@@ -1308,6 +1314,31 @@ export function CashFlow() {
     }
   };
 
+  // Handle marking expense as paid
+  const handleMarkExpensePaid = async (expenseId: string) => {
+    try {
+      updateExpense(
+        {
+          id: expenseId,
+          updates: { is_paid: true },
+        },
+        {
+          onSuccess: () => {
+            message.success('Expense marked as paid successfully');
+          },
+          onError: (error: Error) => {
+            message.error(
+              'Error marking expense as paid: ' +
+                (error instanceof Error ? error.message : 'Unknown error')
+            );
+          },
+        }
+      );
+    } catch (error) {
+      console.error('Error marking expense as paid:', error);
+    }
+  };
+
   // Handle marking income as received
   const handleMarkIncomeReceived = (
     income: {
@@ -1604,12 +1635,19 @@ export function CashFlow() {
                     .filter((bill) => {
                       // Only count expenses/bills (not income)
                       if (bill.type === 'income') return false;
-                      // When paidFilter is 'all', exclude paid bills from total
+                      // When paidFilter is 'all', include all bills in total
                       if (paidFilter === 'all') {
-                        return !bill.isPaid;
+                        return true;
                       }
-                      // When paidFilter is 'unchecked', only count unpaid bills
-                      if (paidFilter === 'unchecked') {
+                      // When paidFilter is 'paid', only count paid bills
+                      if (paidFilter === 'paid') {
+                        return bill.isPaid;
+                      }
+                      // When paidFilter is 'unpaid' or 'unchecked', only count unpaid bills
+                      if (
+                        paidFilter === 'unpaid' ||
+                        paidFilter === 'unchecked'
+                      ) {
                         return !bill.isPaid;
                       }
                       return true;
@@ -1723,6 +1761,15 @@ export function CashFlow() {
                                           selectedYear,
                                           selectedMonth
                                         )
+                                      }
+                                    />
+                                  ) : bill.type === 'expense' &&
+                                    bill.frequency === 'one_time' &&
+                                    !bill.isPaid ? (
+                                    <Checkbox
+                                      checked={false}
+                                      onChange={() =>
+                                        handleMarkExpensePaid(bill.id)
                                       }
                                     />
                                   ) : bill.type === 'income' ? (
@@ -1840,12 +1887,16 @@ export function CashFlow() {
                 .filter((bill) => {
                   // Only count expenses/bills (not income)
                   if (bill.type === 'income') return false;
-                  // When paidFilter is 'all', exclude paid bills from total
+                  // When paidFilter is 'all', include all bills in total
                   if (paidFilter === 'all') {
-                    return !bill.isPaid;
+                    return true;
                   }
-                  // When paidFilter is 'unchecked', only count unpaid bills
-                  if (paidFilter === 'unchecked') {
+                  // When paidFilter is 'paid', only count paid bills
+                  if (paidFilter === 'paid') {
+                    return bill.isPaid;
+                  }
+                  // When paidFilter is 'unpaid' or 'unchecked', only count unpaid bills
+                  if (paidFilter === 'unpaid' || paidFilter === 'unchecked') {
                     return !bill.isPaid;
                   }
                   return true;
@@ -1956,12 +2007,19 @@ export function CashFlow() {
                           .filter((bill) => {
                             // Only count expenses/bills (not income)
                             if (bill.type === 'income') return false;
-                            // When paidFilter is 'all', exclude paid bills from total
+                            // When paidFilter is 'all', include all bills in total
                             if (paidFilter === 'all') {
-                              return !bill.isPaid;
+                              return true;
                             }
-                            // When paidFilter is 'unchecked', only count unpaid bills
-                            if (paidFilter === 'unchecked') {
+                            // When paidFilter is 'paid', only count paid bills
+                            if (paidFilter === 'paid') {
+                              return bill.isPaid;
+                            }
+                            // When paidFilter is 'unpaid' or 'unchecked', only count unpaid bills
+                            if (
+                              paidFilter === 'unpaid' ||
+                              paidFilter === 'unchecked'
+                            ) {
                               return !bill.isPaid;
                             }
                             return true;
@@ -2066,6 +2124,15 @@ export function CashFlow() {
                                                 year,
                                                 month
                                               )
+                                            }
+                                          />
+                                        ) : bill.type === 'expense' &&
+                                          bill.frequency === 'one_time' &&
+                                          !bill.isPaid ? (
+                                          <Checkbox
+                                            checked={false}
+                                            onChange={() =>
+                                              handleMarkExpensePaid(bill.id)
                                             }
                                           />
                                         ) : bill.type === 'income' ? (

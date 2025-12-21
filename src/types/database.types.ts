@@ -67,6 +67,7 @@ export interface Expense {
   start_date: string | null // Date when recurring expense starts
   liability_id: string | null // Reference to liabilities table (when expense is a payment for a liability)
   is_active: boolean
+  is_paid: boolean // Whether the expense has been paid
   created_at: string
   updated_at: string
 }

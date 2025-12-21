@@ -79,6 +79,7 @@ export function Expenses() {
         start_date: expense.start_date ? dayjs(expense.start_date) : dayjs(),
         due_date: expense.due_date || undefined,
         is_active: expense.is_active !== undefined ? expense.is_active : true,
+        is_paid: expense.is_paid !== undefined ? expense.is_paid : (expense.frequency === 'one_time' ? true : false),
       })
     } else {
       setEditingExpense(null)
@@ -88,6 +89,7 @@ export function Expenses() {
         expense_date: dayjs(),
         start_date: dayjs(),
         is_active: true,
+        is_paid: true, // One-time expenses default to paid
       })
     }
     setIsModalOpen(true)
@@ -128,6 +130,7 @@ export function Expenses() {
           ? (values.start_date as Dayjs).format('YYYY-MM-DD')
           : null,
         is_active: values.is_active,
+        is_paid: values.is_paid !== undefined ? values.is_paid : (values.frequency === 'one_time' ? true : false),
       }
 
       if (editingExpense) {
@@ -419,16 +422,28 @@ export function Expenses() {
               const frequency = getFieldValue('frequency')
               if (frequency === 'one_time') {
                 return (
-                  <Form.Item
-                    name="expense_date"
-                    label="Date"
-                    rules={[{ required: true, message: 'Please select a date' }]}
-                  >
-                    <DatePicker style={{ width: '100%' }} />
-                    <div style={{ fontSize: '12px', color: '#6b7280', marginTop: 4 }}>
-                      When did this expense occur?
-                    </div>
-                  </Form.Item>
+                  <>
+                    <Form.Item
+                      name="expense_date"
+                      label="Date"
+                      rules={[{ required: true, message: 'Please select a date' }]}
+                    >
+                      <DatePicker style={{ width: '100%' }} />
+                      <div style={{ fontSize: '12px', color: '#6b7280', marginTop: 4 }}>
+                        When did this expense occur?
+                      </div>
+                    </Form.Item>
+                    <Form.Item
+                      name="is_paid"
+                      valuePropName="checked"
+                      label="Paid"
+                    >
+                      <Switch />
+                      <div style={{ fontSize: '12px', color: '#6b7280', marginTop: 4 }}>
+                        Mark as paid if you've already paid this expense. Unpaid expenses won't deduct from your cash.
+                      </div>
+                    </Form.Item>
+                  </>
                 )
               }
               return (
@@ -469,6 +484,17 @@ export function Expenses() {
                   >
                     <Switch />
                     <span style={{ marginLeft: 8 }}>Active</span>
+                  </Form.Item>
+
+                  <Form.Item
+                    name="is_paid"
+                    valuePropName="checked"
+                    label="Paid"
+                  >
+                    <Switch />
+                    <div style={{ fontSize: '12px', color: '#6b7280', marginTop: 4 }}>
+                      Mark as paid if you've already paid this expense. Unpaid expenses won't deduct from your cash.
+                    </div>
                   </Form.Item>
                 </>
               )
