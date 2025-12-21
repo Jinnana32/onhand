@@ -36,7 +36,6 @@ import {
   CalendarOutlined,
   UnorderedListOutlined,
   FilterOutlined,
-  CloseOutlined,
   EditOutlined,
 } from '@ant-design/icons';
 import type { MenuProps } from 'antd';
@@ -66,7 +65,12 @@ export function CashFlow() {
     updateIncomeSourceAsync,
     createIncomeSourceAsync,
   } = useIncomeSources();
-  const { profile, isLoading: isLoadingProfile, updateProfile, isUpdating: isUpdatingProfile } = useProfile();
+  const {
+    profile,
+    isLoading: isLoadingProfile,
+    updateProfile,
+    isUpdating: isUpdatingProfile,
+  } = useProfile();
   const isLoading =
     isLoadingLiabilities ||
     isLoadingExpenses ||
@@ -76,9 +80,9 @@ export function CashFlow() {
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [viewMode, setViewMode] = useState<ViewMode>('calendar');
   const [selectedFilters, setSelectedFilters] = useState<FilterGroup[]>([]);
-  const [paidFilter, setPaidFilter] = useState<'all' | 'paid' | 'unpaid' | 'unchecked'>(
-    'all'
-  );
+  const [paidFilter, setPaidFilter] = useState<
+    'all' | 'paid' | 'unpaid' | 'unchecked'
+  >('all');
   const [pendingBill, setPendingBill] = useState<{
     bill: {
       type: 'liability' | 'expense' | 'income';
@@ -103,7 +107,6 @@ export function CashFlow() {
     year: number;
     month: number;
   } | null>(null);
-
 
   // Get month name
   const monthNames = [
@@ -314,6 +317,35 @@ export function CashFlow() {
             category: expense.category || 'Bills',
             dueDate,
             isPaid: false, // Recurring expenses are tracked differently
+          });
+        }
+      });
+    }
+
+    // Process one-time expenses
+    if (expenses) {
+      const activeOneTimeExpenses = expenses.filter(
+        (e) => e.is_active && e.frequency === 'one_time'
+      );
+      activeOneTimeExpenses.forEach((expense) => {
+        if (!expense.expense_date) return;
+
+        const expenseDate = new Date(expense.expense_date);
+        expenseDate.setHours(0, 0, 0, 0);
+
+        // Check if this expense falls in the selected month
+        if (
+          expenseDate.getMonth() === selectedMonth &&
+          expenseDate.getFullYear() === selectedYear
+        ) {
+          bills.push({
+            type: 'expense',
+            id: expense.id,
+            name: expense.description,
+            amount: expense.amount,
+            category: expense.category || 'Bills',
+            dueDate: expenseDate,
+            isPaid: true, // One-time expenses are already paid when logged
           });
         }
       });
@@ -907,6 +939,40 @@ export function CashFlow() {
         });
       }
 
+      // Process one-time expenses
+      if (expenses) {
+        const activeOneTimeExpenses = expenses.filter(
+          (e) => e.is_active && e.frequency === 'one_time'
+        );
+        activeOneTimeExpenses.forEach((expense) => {
+          if (!expense.expense_date) return;
+
+          const expenseDate = new Date(expense.expense_date);
+          expenseDate.setHours(0, 0, 0, 0);
+
+          // Determine which month this expense belongs to
+          const expenseYear = expenseDate.getFullYear();
+          const expenseMonth = expenseDate.getMonth();
+          const monthKey = `${expenseYear}-${expenseMonth}`;
+
+          // Initialize month if it doesn't exist
+          if (!monthsData[monthKey]) {
+            monthsData[monthKey] = [];
+          }
+
+          // Add the expense to the appropriate month
+          monthsData[monthKey].push({
+            type: 'expense',
+            id: expense.id,
+            name: expense.description,
+            amount: expense.amount,
+            category: expense.category || 'Bills',
+            dueDate: expenseDate,
+            isPaid: true, // One-time expenses are already paid when logged
+          });
+        });
+      }
+
       // Process recurring income sources
       if (incomeSources) {
         const activeRecurringIncome = incomeSources.filter(
@@ -1315,8 +1381,18 @@ export function CashFlow() {
 
   return (
     <Space direction="vertical" size="large" style={{ width: '100%' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 16 }}>
-        <Title level={2} style={{ margin: 0 }}>Cash Flow</Title>
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: 16,
+        }}
+      >
+        <Title level={2} style={{ margin: 0 }}>
+          Cash Flow
+        </Title>
         <Space wrap>
           {/* Filter Dropdown */}
           <Dropdown
@@ -1329,14 +1405,19 @@ export function CashFlow() {
             <Button icon={<FilterOutlined />}>
               Filter
               {selectedFilters.length > 0 && (
-                <Badge count={selectedFilters.length} style={{ marginLeft: 8 }} />
+                <Badge
+                  count={selectedFilters.length}
+                  style={{ marginLeft: 8 }}
+                />
               )}
             </Button>
           </Dropdown>
           {/* Paid/Unpaid Filter */}
           <Select
             value={paidFilter}
-            onChange={(value) => setPaidFilter(value as 'all' | 'paid' | 'unpaid' | 'unchecked')}
+            onChange={(value) =>
+              setPaidFilter(value as 'all' | 'paid' | 'unpaid' | 'unchecked')
+            }
             style={{ width: 140 }}
           >
             <Option value="all">All Bills</Option>
@@ -1347,7 +1428,11 @@ export function CashFlow() {
           {/* View Mode Toggle */}
           <Segmented
             options={[
-              { label: 'Calendar', value: 'calendar', icon: <CalendarOutlined /> },
+              {
+                label: 'Calendar',
+                value: 'calendar',
+                icon: <CalendarOutlined />,
+              },
               { label: 'List', value: 'list', icon: <UnorderedListOutlined /> },
             ]}
             value={viewMode}
@@ -1362,26 +1447,26 @@ export function CashFlow() {
           message={
             <Space wrap>
               <Text strong>Active filters:</Text>
-            {selectedFilters.map((filter) => {
-              const option = filterOptions.find((o) => o.value === filter);
-              return (
+              {selectedFilters.map((filter) => {
+                const option = filterOptions.find((o) => o.value === filter);
+                return (
                   <Tag
-                  key={filter}
+                    key={filter}
                     closable
                     onClose={() => handleFilterToggle(filter)}
                     color="blue"
-                >
-                  {option?.label}
+                  >
+                    {option?.label}
                   </Tag>
-              );
-            })}
+                );
+              })}
               <Button
                 type="link"
                 size="small"
-              onClick={() => setSelectedFilters([])}
+                onClick={() => setSelectedFilters([])}
                 style={{ padding: 0 }}
-            >
-              Clear all
+              >
+                Clear all
               </Button>
             </Space>
           }
@@ -1394,26 +1479,23 @@ export function CashFlow() {
         <>
           {/* Month Selector */}
           <Card>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <Button
-                icon={<LeftOutlined />}
-                onClick={goToPreviousMonth}
-              />
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+              }}
+            >
+              <Button icon={<LeftOutlined />} onClick={goToPreviousMonth} />
               <Space>
                 <Title level={4} style={{ margin: 0 }}>
                   {monthNames[selectedMonth]} {selectedYear}
                 </Title>
-                <Button
-                  type="link"
-                  onClick={goToCurrentMonth}
-                >
+                <Button type="link" onClick={goToCurrentMonth}>
                   Today
                 </Button>
               </Space>
-              <Button
-                icon={<RightOutlined />}
-                onClick={goToNextMonth}
-              />
+              <Button icon={<RightOutlined />} onClick={goToNextMonth} />
             </div>
           </Card>
 
@@ -1433,17 +1515,26 @@ export function CashFlow() {
                   value={formatCurrency(totalIncome)}
                   valueStyle={{ color: '#16a34a' }}
                 />
-                <Text type="secondary" style={{ fontSize: '12px', display: 'block', marginTop: 4 }}>
-                  Expected Remaining Cash {formatCurrency(expectedRemainingCash)}
+                <Text
+                  type="secondary"
+                  style={{ fontSize: '12px', display: 'block', marginTop: 4 }}
+                >
+                  Expected Remaining Cash{' '}
+                  {formatCurrency(expectedRemainingCash)}
                 </Text>
               </Col>
               <Col xs={24} sm={12} md={8}>
                 <Statistic
                   title="Remaining Funds for the month"
                   value={formatCurrency(remainingMoney)}
-                  valueStyle={{ color: remainingMoney >= 0 ? '#16a34a' : '#dc2626' }}
+                  valueStyle={{
+                    color: remainingMoney >= 0 ? '#16a34a' : '#dc2626',
+                  }}
                 />
-                <Text type="secondary" style={{ fontSize: '12px', display: 'block', marginTop: 4 }}>
+                <Text
+                  type="secondary"
+                  style={{ fontSize: '12px', display: 'block', marginTop: 4 }}
+                >
                   Total bills - Received income
                 </Text>
               </Col>
@@ -1453,7 +1544,10 @@ export function CashFlow() {
                   value={formatCurrency(remainingBills)}
                   valueStyle={{ color: '#ea580c' }}
                 />
-                <Text type="secondary" style={{ fontSize: '12px', display: 'block', marginTop: 4 }}>
+                <Text
+                  type="secondary"
+                  style={{ fontSize: '12px', display: 'block', marginTop: 4 }}
+                >
                   Unpaid liabilities
                 </Text>
               </Col>
@@ -1467,7 +1561,9 @@ export function CashFlow() {
                         size="small"
                         icon={<EditOutlined />}
                         onClick={() => {
-                          cashForm.setFieldsValue({ current_cash: profile?.current_cash || 0 });
+                          cashForm.setFieldsValue({
+                            current_cash: profile?.current_cash || 0,
+                          });
                           setIsEditCashModalOpen(true);
                         }}
                         style={{ padding: 0, height: 'auto' }}
@@ -1477,7 +1573,10 @@ export function CashFlow() {
                   value={formatCurrency(profile?.current_cash || 0)}
                   valueStyle={{ color: '#2563eb' }}
                 />
-                <Text type="secondary" style={{ fontSize: '12px', display: 'block', marginTop: 4 }}>
+                <Text
+                  type="secondary"
+                  style={{ fontSize: '12px', display: 'block', marginTop: 4 }}
+                >
                   Current cash on hand
                 </Text>
               </Col>
@@ -1516,9 +1615,6 @@ export function CashFlow() {
                       return true;
                     })
                     .reduce((sum, bill) => sum + bill.amount, 0);
-                  const isPast =
-                    new Date(selectedYear, selectedMonth, parseInt(day)) <
-                    new Date(new Date().setHours(0, 0, 0, 0));
 
                   return (
                     <Card
@@ -1528,7 +1624,16 @@ export function CashFlow() {
                         borderLeftColor: '#e5e7eb',
                       }}
                     >
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16, paddingBottom: 16, borderBottom: '1px solid #e5e7eb' }}>
+                      <div
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'flex-start',
+                          marginBottom: 16,
+                          paddingBottom: 16,
+                          borderBottom: '1px solid #e5e7eb',
+                        }}
+                      >
                         <div>
                           <Text type="secondary" style={{ fontSize: '12px' }}>
                             {new Date(
@@ -1546,16 +1651,38 @@ export function CashFlow() {
                         <Space direction="vertical" align="end">
                           {dayIncome > 0 && (
                             <div>
-                              <Text type="secondary" style={{ fontSize: '12px' }}>Income</Text>
-                              <div style={{ fontSize: '18px', fontWeight: 600, color: '#16a34a' }}>
+                              <Text
+                                type="secondary"
+                                style={{ fontSize: '12px' }}
+                              >
+                                Income
+                              </Text>
+                              <div
+                                style={{
+                                  fontSize: '18px',
+                                  fontWeight: 600,
+                                  color: '#16a34a',
+                                }}
+                              >
                                 {formatCurrency(dayIncome)}
                               </div>
                             </div>
                           )}
                           {dayBillsTotal > 0 && (
                             <div>
-                              <Text type="secondary" style={{ fontSize: '12px' }}>Bills</Text>
-                              <div style={{ fontSize: '18px', fontWeight: 600, color: '#dc2626' }}>
+                              <Text
+                                type="secondary"
+                                style={{ fontSize: '12px' }}
+                              >
+                                Bills
+                              </Text>
+                              <div
+                                style={{
+                                  fontSize: '18px',
+                                  fontWeight: 600,
+                                  color: '#dc2626',
+                                }}
+                              >
                                 {formatCurrency(dayBillsTotal)}
                               </div>
                             </div>
@@ -1569,78 +1696,97 @@ export function CashFlow() {
                       <List
                         dataSource={dayBills}
                         renderItem={(bill, index) => {
-                          const isCompleted = bill.isPaid || (bill.type === 'income' && bill.isReceived);
+                          const isCompleted =
+                            bill.isPaid ||
+                            (bill.type === 'income' && bill.isReceived);
                           return (
                             <List.Item
-                            key={`${bill.type}-${bill.id}-${index}`}
+                              key={`${bill.type}-${bill.id}-${index}`}
                               style={{
                                 opacity: isCompleted ? 0.6 : 1,
                                 padding: '12px 0',
-                                borderBottom: index < dayBills.length - 1 ? '1px solid #f0f0f0' : 'none',
+                                borderBottom:
+                                  index < dayBills.length - 1
+                                    ? '1px solid #f0f0f0'
+                                    : 'none',
                               }}
                             >
                               <List.Item.Meta
                                 avatar={
                                   bill.type === 'liability' ? (
                                     <Checkbox
-                                  checked={bill.isPaid}
-                                  disabled={bill.isPaid}
-                                  onChange={() =>
-                                    handleTogglePaid(
-                                      bill,
-                                      selectedYear,
-                                      selectedMonth
-                                    )
-                                  }
+                                      checked={bill.isPaid}
+                                      disabled={bill.isPaid}
+                                      onChange={() =>
+                                        handleTogglePaid(
+                                          bill,
+                                          selectedYear,
+                                          selectedMonth
+                                        )
+                                      }
                                     />
                                   ) : bill.type === 'income' ? (
                                     <Checkbox
-                                  checked={bill.isReceived || false}
-                                  disabled={bill.isReceived || false}
-                                  onChange={() => {
-                                    const originalIncome = incomeSources?.find(
-                                      (inc) =>
-                                        inc.id === bill.id ||
-                                        bill.id.startsWith(inc.id)
-                                    );
-                                    handleMarkIncomeReceived(
-                                      {
-                                        id: bill.id,
-                                        name: bill.name,
-                                        amount: bill.amount,
-                                        frequency: originalIncome?.frequency,
-                                        category: originalIncome?.category,
-                                      },
-                                      selectedYear,
-                                      selectedMonth
-                                    );
-                                  }}
+                                      checked={bill.isReceived || false}
+                                      disabled={bill.isReceived || false}
+                                      onChange={() => {
+                                        const originalIncome =
+                                          incomeSources?.find(
+                                            (inc) =>
+                                              inc.id === bill.id ||
+                                              bill.id.startsWith(inc.id)
+                                          );
+                                        handleMarkIncomeReceived(
+                                          {
+                                            id: bill.id,
+                                            name: bill.name,
+                                            amount: bill.amount,
+                                            frequency:
+                                              originalIncome?.frequency,
+                                            category: originalIncome?.category,
+                                          },
+                                          selectedYear,
+                                          selectedMonth
+                                        );
+                                      }}
                                     />
                                   ) : null
                                 }
                                 title={
                                   <Space>
-                                    <Text delete={isCompleted} strong={!isCompleted}>
-                                    {bill.name}
+                                    <Text
+                                      delete={isCompleted}
+                                      strong={!isCompleted}
+                                    >
+                                      {bill.name}
                                     </Text>
-                                    <Tag color={getCategoryColor(bill.type, bill.category, bill.payment_type)}>
-                                    {bill.type === 'expense'
-                                      ? 'Recurring Expense'
-                                      : getCategoryLabel(
-                                          bill.type,
-                                          bill.category,
-                                          bill.payment_type,
-                                          bill.liability,
-                                          selectedYear,
-                                          selectedMonth
-                                        )}
+                                    <Tag
+                                      color={getCategoryColor(
+                                        bill.type,
+                                        bill.category,
+                                        bill.payment_type
+                                      )}
+                                    >
+                                      {bill.type === 'expense'
+                                        ? 'Recurring Expense'
+                                        : getCategoryLabel(
+                                            bill.type,
+                                            bill.category,
+                                            bill.payment_type,
+                                            bill.liability,
+                                            selectedYear,
+                                            selectedMonth
+                                          )}
                                     </Tag>
                                   </Space>
                                 }
                                 description={
                                   bill.source ? (
-                                    <Text type="secondary" style={{ fontSize: '12px' }}>
-                                    {bill.source}
+                                    <Text
+                                      type="secondary"
+                                      style={{ fontSize: '12px' }}
+                                    >
+                                      {bill.source}
                                     </Text>
                                   ) : null
                                 }
@@ -1648,20 +1794,26 @@ export function CashFlow() {
                               <div>
                                 <Text
                                   strong
-                                  delete={bill.isPaid || (bill.type === 'income' && bill.isReceived)}
+                                  delete={
+                                    bill.isPaid ||
+                                    (bill.type === 'income' && bill.isReceived)
+                                  }
                                   style={{
                                     fontSize: '16px',
-                                    color: bill.isPaid || (bill.type === 'income' && bill.isReceived)
-                                      ? '#9ca3af'
-                                      : bill.type === 'income'
-                                      ? '#16a34a'
-                                      : '#dc2626',
+                                    color:
+                                      bill.isPaid ||
+                                      (bill.type === 'income' &&
+                                        bill.isReceived)
+                                        ? '#9ca3af'
+                                        : bill.type === 'income'
+                                        ? '#16a34a'
+                                        : '#dc2626',
                                   }}
-                              >
-                                {bill.type === 'income' ? '+' : '-'}
-                                {formatCurrency(bill.amount)}
+                                >
+                                  {bill.type === 'income' ? '+' : '-'}
+                                  {formatCurrency(bill.amount)}
                                 </Text>
-                            </div>
+                              </div>
                             </List.Item>
                           );
                         }}
@@ -1702,9 +1854,6 @@ export function CashFlow() {
               const isCurrentMonth =
                 year === new Date().getFullYear() &&
                 month === new Date().getMonth();
-              const isPastMonth =
-                new Date(year, month, 1) <
-                new Date(new Date().getFullYear(), new Date().getMonth(), 1);
 
               // Group bills by date for this month
               const billsByDateForMonth: Record<number, typeof monthBills> = {};
@@ -1724,45 +1873,77 @@ export function CashFlow() {
                     borderLeftColor: '#e5e7eb',
                   }}
                 >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
-                      <div>
+                  <div
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'flex-start',
+                      marginBottom: 16,
+                    }}
+                  >
+                    <div>
                       <Title level={3} style={{ margin: 0 }}>
-                          {monthNames[month]} {year}
+                        {monthNames[month]} {year}
                       </Title>
-                        {isCurrentMonth && (
+                      {isCurrentMonth && (
                         <Tag color="blue" style={{ marginTop: 4 }}>
-                            Current Month
+                          Current Month
                         </Tag>
-                        )}
-                      </div>
+                      )}
+                    </div>
                     <Space direction="vertical" align="end">
-                        {monthIncome > 0 && (
+                      {monthIncome > 0 && (
                         <div>
-                          <Text type="secondary" style={{ fontSize: '12px' }}>Income</Text>
-                          <div style={{ fontSize: '20px', fontWeight: 600, color: '#16a34a' }}>
-                              {formatCurrency(monthIncome)}
+                          <Text type="secondary" style={{ fontSize: '12px' }}>
+                            Income
+                          </Text>
+                          <div
+                            style={{
+                              fontSize: '20px',
+                              fontWeight: 600,
+                              color: '#16a34a',
+                            }}
+                          >
+                            {formatCurrency(monthIncome)}
                           </div>
+                        </div>
+                      )}
+                      {monthBillsTotal > 0 && (
+                        <div>
+                          <Text type="secondary" style={{ fontSize: '12px' }}>
+                            Bills
+                          </Text>
+                          <div
+                            style={{
+                              fontSize: '20px',
+                              fontWeight: 600,
+                              color: '#dc2626',
+                            }}
+                          >
+                            {formatCurrency(monthBillsTotal)}
                           </div>
-                        )}
-                        {monthBillsTotal > 0 && (
-                          <div>
-                          <Text type="secondary" style={{ fontSize: '12px' }}>Bills</Text>
-                          <div style={{ fontSize: '20px', fontWeight: 600, color: '#dc2626' }}>
-                              {formatCurrency(monthBillsTotal)}
-                          </div>
-                          </div>
-                        )}
-                        {monthIncome === 0 && monthBillsTotal === 0 && (
+                        </div>
+                      )}
+                      {monthIncome === 0 && monthBillsTotal === 0 && (
                         <Text type="secondary">{formatCurrency(0)}</Text>
-                        )}
-                      <Text type="secondary" style={{ fontSize: '12px', marginTop: 8 }}>
-                          {monthBills.length}{' '}
-                        {monthBills.length === 1 ? 'transaction' : 'transactions'}
+                      )}
+                      <Text
+                        type="secondary"
+                        style={{ fontSize: '12px', marginTop: 8 }}
+                      >
+                        {monthBills.length}{' '}
+                        {monthBills.length === 1
+                          ? 'transaction'
+                          : 'transactions'}
                       </Text>
                     </Space>
                   </div>
 
-                  <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+                  <Space
+                    direction="vertical"
+                    size="middle"
+                    style={{ width: '100%' }}
+                  >
                     {Object.keys(billsByDateForMonth)
                       .sort((a, b) => parseInt(a) - parseInt(b))
                       .map((day) => {
@@ -1798,9 +1979,19 @@ export function CashFlow() {
                               paddingLeft: 16,
                             }}
                           >
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                            <div
+                              style={{
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'center',
+                                marginBottom: 8,
+                              }}
+                            >
                               <div>
-                                <Text type="secondary" style={{ fontSize: '12px' }}>
+                                <Text
+                                  type="secondary"
+                                  style={{ fontSize: '12px' }}
+                                >
                                   {dayDate.toLocaleDateString('en-US', {
                                     weekday: 'short',
                                   })}
@@ -1813,11 +2004,17 @@ export function CashFlow() {
                                   }}
                                 >
                                   {parseInt(day)} {monthNames[month]}
-                              </div>
+                                </div>
                               </div>
                               <Space direction="vertical" align="end">
                                 {dayIncome > 0 && (
-                                  <Text strong style={{ color: '#16a34a', fontSize: '14px' }}>
+                                  <Text
+                                    strong
+                                    style={{
+                                      color: '#16a34a',
+                                      fontSize: '14px',
+                                    }}
+                                  >
                                     +{formatCurrency(dayIncome)}
                                   </Text>
                                 )}
@@ -1833,19 +2030,24 @@ export function CashFlow() {
                                   </Text>
                                 )}
                                 {dayIncome === 0 && dayBillsTotal === 0 && (
-                                  <Text type="secondary" style={{ fontSize: '12px' }}>
+                                  <Text
+                                    type="secondary"
+                                    style={{ fontSize: '12px' }}
+                                  >
                                     {formatCurrency(0)}
                                   </Text>
                                 )}
                               </Space>
-                              </div>
+                            </div>
                             <List
                               dataSource={dayBills}
                               renderItem={(bill, index) => {
-                                const isCompleted = bill.isPaid || (bill.type === 'income' && bill.isReceived);
+                                const isCompleted =
+                                  bill.isPaid ||
+                                  (bill.type === 'income' && bill.isReceived);
                                 return (
                                   <List.Item
-                                  key={`${bill.type}-${bill.id}-${index}`}
+                                    key={`${bill.type}-${bill.id}-${index}`}
                                     style={{
                                       opacity: isCompleted ? 0.6 : 1,
                                       padding: '8px 0 8px 8px',
@@ -1856,79 +2058,104 @@ export function CashFlow() {
                                       avatar={
                                         bill.type === 'liability' ? (
                                           <Checkbox
-                                        checked={bill.isPaid}
-                                        disabled={bill.isPaid}
-                                        onChange={() =>
-                                          handleTogglePaid(bill, year, month)
-                                        }
+                                            checked={bill.isPaid}
+                                            disabled={bill.isPaid}
+                                            onChange={() =>
+                                              handleTogglePaid(
+                                                bill,
+                                                year,
+                                                month
+                                              )
+                                            }
                                           />
                                         ) : bill.type === 'income' ? (
                                           <Checkbox
-                                        checked={bill.isReceived || false}
-                                        disabled={bill.isReceived || false}
-                                        onChange={() => {
-                                          const originalIncome =
-                                            incomeSources?.find(
-                                              (inc) =>
-                                                inc.id === bill.id ||
-                                                bill.id.startsWith(inc.id)
-                                            );
-                                          handleMarkIncomeReceived(
-                                            {
-                                              id: bill.id,
-                                              name: bill.name,
-                                              amount: bill.amount,
-                                                  frequency: originalIncome?.frequency,
-                                                  category: originalIncome?.category,
-                                            },
-                                            year,
-                                            month
-                                          );
-                                        }}
+                                            checked={bill.isReceived || false}
+                                            disabled={bill.isReceived || false}
+                                            onChange={() => {
+                                              const originalIncome =
+                                                incomeSources?.find(
+                                                  (inc) =>
+                                                    inc.id === bill.id ||
+                                                    bill.id.startsWith(inc.id)
+                                                );
+                                              handleMarkIncomeReceived(
+                                                {
+                                                  id: bill.id,
+                                                  name: bill.name,
+                                                  amount: bill.amount,
+                                                  frequency:
+                                                    originalIncome?.frequency,
+                                                  category:
+                                                    originalIncome?.category,
+                                                },
+                                                year,
+                                                month
+                                              );
+                                            }}
                                           />
                                         ) : null
                                       }
                                       title={
                                         <Space>
-                                          <Text delete={isCompleted} style={{ fontSize: '14px' }}>
-                                          {bill.name}
+                                          <Text
+                                            delete={isCompleted}
+                                            style={{ fontSize: '14px' }}
+                                          >
+                                            {bill.name}
                                           </Text>
-                                          <Tag color={getCategoryColor(bill.type, bill.category, bill.payment_type)}>
-                                          {bill.type === 'expense'
-                                            ? 'Recurring Expense'
-                                            : getCategoryLabel(
-                                                bill.type,
-                                                bill.category,
-                                                bill.payment_type,
-                                                bill.liability,
-                                                year,
-                                                month
-                                              )}
+                                          <Tag
+                                            color={getCategoryColor(
+                                              bill.type,
+                                              bill.category,
+                                              bill.payment_type
+                                            )}
+                                          >
+                                            {bill.type === 'expense'
+                                              ? 'Recurring Expense'
+                                              : getCategoryLabel(
+                                                  bill.type,
+                                                  bill.category,
+                                                  bill.payment_type,
+                                                  bill.liability,
+                                                  year,
+                                                  month
+                                                )}
                                           </Tag>
                                         </Space>
                                       }
                                       description={
                                         bill.source ? (
-                                          <Text type="secondary" style={{ fontSize: '12px' }}>
-                                          {bill.source}
+                                          <Text
+                                            type="secondary"
+                                            style={{ fontSize: '12px' }}
+                                          >
+                                            {bill.source}
                                           </Text>
                                         ) : null
                                       }
                                     />
                                     <Text
                                       strong
-                                      delete={bill.isPaid || (bill.type === 'income' && bill.isReceived)}
+                                      delete={
+                                        bill.isPaid ||
+                                        (bill.type === 'income' &&
+                                          bill.isReceived)
+                                      }
                                       style={{
                                         fontSize: '14px',
-                                        color: bill.isPaid || (bill.type === 'income' && bill.isReceived)
-                                          ? '#9ca3af'
-                                          : bill.type === 'income'
-                                          ? '#16a34a'
-                                          : '#dc2626',
+                                        color:
+                                          bill.isPaid ||
+                                          (bill.type === 'income' &&
+                                            bill.isReceived)
+                                            ? '#9ca3af'
+                                            : bill.type === 'income'
+                                            ? '#16a34a'
+                                            : '#dc2626',
                                       }}
-                                  >
-                                    {bill.type === 'income' ? '+' : '-'}
-                                    {formatCurrency(bill.amount)}
+                                    >
+                                      {bill.type === 'income' ? '+' : '-'}
+                                      {formatCurrency(bill.amount)}
                                     </Text>
                                   </List.Item>
                                 );
@@ -1971,20 +2198,20 @@ export function CashFlow() {
             />
             <Descriptions column={2} bordered size="small">
               <Descriptions.Item label="Bill Name">
-                    {pendingBill.bill.name}
+                {pendingBill.bill.name}
               </Descriptions.Item>
               <Descriptions.Item label="Amount">
-                    {formatCurrency(pendingBill.bill.amount)}
+                {formatCurrency(pendingBill.bill.amount)}
               </Descriptions.Item>
               <Descriptions.Item label="Due Month">
-                    {monthNames[pendingBill.month]} {pendingBill.year}
+                {monthNames[pendingBill.month]} {pendingBill.year}
               </Descriptions.Item>
               <Descriptions.Item label="Payment Date">
-                    {new Date().toLocaleDateString('en-US', {
-                      year: 'numeric',
-                      month: 'long',
-                      day: 'numeric',
-                    })}
+                {new Date().toLocaleDateString('en-US', {
+                  year: 'numeric',
+                  month: 'long',
+                  day: 'numeric',
+                })}
               </Descriptions.Item>
             </Descriptions>
           </Space>
@@ -2010,10 +2237,10 @@ export function CashFlow() {
             />
             <Descriptions column={2} bordered size="small">
               <Descriptions.Item label="Income Name">
-                    {pendingIncome.income.name}
+                {pendingIncome.income.name}
               </Descriptions.Item>
               <Descriptions.Item label="Amount">
-                    {formatCurrency(pendingIncome.income.amount)}
+                {formatCurrency(pendingIncome.income.amount)}
               </Descriptions.Item>
             </Descriptions>
           </Space>
@@ -2039,7 +2266,10 @@ export function CashFlow() {
                   cashForm.resetFields();
                 },
                 onError: (error: Error) => {
-                  message.error('Error updating cash: ' + (error instanceof Error ? error.message : 'Unknown error'));
+                  message.error(
+                    'Error updating cash: ' +
+                      (error instanceof Error ? error.message : 'Unknown error')
+                  );
                 },
               }
             );
@@ -2051,16 +2281,17 @@ export function CashFlow() {
         okText="Update"
         cancelText="Cancel"
       >
-        <Form
-          form={cashForm}
-          layout="vertical"
-        >
+        <Form form={cashForm} layout="vertical">
           <Form.Item
             name="current_cash"
             label="Cash on Hand (₱)"
             rules={[
               { required: true, message: 'Please enter the cash amount' },
-              { type: 'number', min: 0, message: 'Cash amount must be 0 or greater' },
+              {
+                type: 'number',
+                min: 0,
+                message: 'Cash amount must be 0 or greater',
+              },
             ]}
           >
             <InputNumber
