@@ -102,6 +102,7 @@ export function CashFlow() {
   const [expenseForm] = Form.useForm();
   const [billForm] = Form.useForm();
   const [expenseOverrideForm] = Form.useForm();
+  const [liabilityOverrideForm] = Form.useForm();
   const [pendingIncome, setPendingIncome] = useState<{
     income: {
       id: string;
@@ -130,6 +131,15 @@ export function CashFlow() {
       amount: number;
       category: string | null;
       frequency: 'monthly' | 'weekly';
+    };
+    year: number;
+    month: number;
+  } | null>(null);
+  const [editingLiabilityOverride, setEditingLiabilityOverride] = useState<{
+    liability: {
+      id: string;
+      name: string;
+      amount: number;
     };
     year: number;
     month: number;
@@ -239,6 +249,16 @@ export function CashFlow() {
     // Process liabilities
     if (liabilities) {
       const activeLiabilities = liabilities.filter((l) => l.is_active);
+
+      // Get all override expenses (one-time expenses with "(Override)" in description and linked to a liability)
+      const overrideExpenses =
+        expenses?.filter(
+          (e) =>
+            e.frequency === 'one_time' &&
+            e.description.includes('(Override)') &&
+            e.liability_id
+        ) || [];
+
       activeLiabilities.forEach((liability) => {
         // Check if liability is within payment period
         const startDate = liability.start_date
@@ -288,6 +308,22 @@ export function CashFlow() {
         ) {
           // Check if this specific due date is within the payment period
           if (!endDate || dueDate <= endDate) {
+            // Check if there's an override expense for this liability in this month
+            const hasOverride = overrideExpenses.some((override) => {
+              const overrideDate = new Date(override.expense_date);
+              return (
+                override.liability_id === liability.id &&
+                override.description === `${liability.name} (Override)` &&
+                overrideDate.getMonth() === selectedMonth &&
+                overrideDate.getFullYear() === selectedYear
+              );
+            });
+
+            // Skip this liability if an override exists for this month
+            if (hasOverride) {
+              return;
+            }
+
             const isPaid = isBillPaid(
               liability.id,
               selectedYear,
@@ -1538,6 +1574,77 @@ export function CashFlow() {
     expenseOverrideForm.resetFields();
   };
 
+  // Handle opening edit override modal for liability
+  const handleEditLiabilityOverride = (
+    bill: {
+      type: 'liability' | 'expense' | 'income';
+      id: string;
+      name: string;
+      amount: number;
+      isPaid?: boolean;
+    },
+    year: number,
+    month: number
+  ) => {
+    if (bill.type !== 'liability' || bill.isPaid) return;
+
+    setEditingLiabilityOverride({
+      liability: {
+        id: bill.id,
+        name: bill.name,
+        amount: bill.amount,
+      },
+      year,
+      month,
+    });
+    // Set form initial values
+    liabilityOverrideForm.setFieldsValue({
+      amount: bill.amount,
+      expense_date: dayjs(new Date(year, month, 1)),
+    });
+  };
+
+  // Confirm creating liability override
+  const handleConfirmLiabilityOverride = async () => {
+    if (!editingLiabilityOverride) return;
+
+    try {
+      const values = await liabilityOverrideForm.validateFields();
+      const { liability } = editingLiabilityOverride;
+
+      // Create a one-time expense linked to the liability
+      // Use a special description pattern to identify it as an override
+      const expenseDate = (values.expense_date as Dayjs).format('YYYY-MM-DD');
+
+      await createExpenseAsync({
+        description: `${liability.name} (Override)`,
+        amount: values.amount,
+        category: 'Bills',
+        expense_date: expenseDate,
+        frequency: 'one_time',
+        is_active: true,
+        is_paid: false, // Unpaid by default
+        liability_id: liability.id, // Link to the liability
+      });
+
+      message.success('Liability override created successfully');
+      setEditingLiabilityOverride(null);
+      liabilityOverrideForm.resetFields();
+    } catch (error) {
+      // Form validation error - don't show error message
+      if (error && typeof error === 'object' && 'errorFields' in error) {
+        return;
+      }
+      console.error('Error creating liability override:', error);
+      message.error('Failed to create liability override. Please try again.');
+    }
+  };
+
+  const handleCancelLiabilityOverride = () => {
+    setEditingLiabilityOverride(null);
+    liabilityOverrideForm.resetFields();
+  };
+
   // Handle marking income as received
   const handleMarkIncomeReceived = (
     income: {
@@ -2063,6 +2170,21 @@ export function CashFlow() {
                                   {bill.type === 'income' ? '+' : '-'}
                                   {formatCurrency(bill.amount)}
                                 </Text>
+                                {bill.type === 'liability' && !bill.isPaid && (
+                                  <Button
+                                    type="text"
+                                    size="small"
+                                    icon={<EditOutlined />}
+                                    onClick={() =>
+                                      handleEditLiabilityOverride(
+                                        bill,
+                                        selectedYear,
+                                        selectedMonth
+                                      )
+                                    }
+                                    style={{ color: '#1890ff' }}
+                                  />
+                                )}
                                 {bill.type === 'expense' &&
                                   bill.frequency !== 'one_time' &&
                                   !bill.isPaid && (
@@ -2448,6 +2570,22 @@ export function CashFlow() {
                                         {bill.type === 'income' ? '+' : '-'}
                                         {formatCurrency(bill.amount)}
                                       </Text>
+                                      {bill.type === 'liability' &&
+                                        !bill.isPaid && (
+                                          <Button
+                                            type="text"
+                                            size="small"
+                                            icon={<EditOutlined />}
+                                            onClick={() =>
+                                              handleEditLiabilityOverride(
+                                                bill,
+                                                year,
+                                                month
+                                              )
+                                            }
+                                            style={{ color: '#1890ff' }}
+                                          />
+                                        )}
                                       {bill.type === 'expense' &&
                                         bill.frequency !== 'one_time' &&
                                         !bill.isPaid && (
@@ -2629,6 +2767,80 @@ export function CashFlow() {
                     pendingExpense.expense.amount
                   )}`}
                 />
+              </Form.Item>
+            </Space>
+          </Form>
+        )}
+      </Modal>
+
+      {/* Edit Liability Override Modal */}
+      <Modal
+        open={editingLiabilityOverride !== null}
+        onCancel={handleCancelLiabilityOverride}
+        onOk={handleConfirmLiabilityOverride}
+        title="Edit Liability Override"
+        okText="Create Override"
+        cancelText="Cancel"
+      >
+        {editingLiabilityOverride && (
+          <Form
+            key={editingLiabilityOverride.liability.id}
+            form={liabilityOverrideForm}
+            layout="vertical"
+            initialValues={{
+              amount: editingLiabilityOverride.liability.amount,
+              expense_date: dayjs(
+                new Date(
+                  editingLiabilityOverride.year,
+                  editingLiabilityOverride.month,
+                  1
+                )
+              ),
+            }}
+          >
+            <Space direction="vertical" size="large" style={{ width: '100%' }}>
+              <Alert
+                message="Create Liability Override"
+                description="This will create a one-time expense with the specified amount and date. The liability will be hidden for this month."
+                type="info"
+                showIcon
+              />
+              <Descriptions column={1} bordered size="small">
+                <Descriptions.Item label="Liability Name">
+                  {editingLiabilityOverride.liability.name}
+                </Descriptions.Item>
+                <Descriptions.Item label="Original Amount">
+                  {formatCurrency(editingLiabilityOverride.liability.amount)}
+                </Descriptions.Item>
+              </Descriptions>
+              <Form.Item
+                label="Amount"
+                name="amount"
+                rules={[
+                  { required: true, message: 'Please enter an amount' },
+                  {
+                    type: 'number',
+                    min: 0.01,
+                    message: 'Amount must be greater than 0',
+                  },
+                ]}
+              >
+                <InputNumber
+                  style={{ width: '100%' }}
+                  prefix="₱"
+                  min={0}
+                  step={0.01}
+                  precision={2}
+                />
+              </Form.Item>
+              <Form.Item
+                label="Expense Date"
+                name="expense_date"
+                rules={[
+                  { required: true, message: 'Please select an expense date' },
+                ]}
+              >
+                <DatePicker style={{ width: '100%' }} format="YYYY-MM-DD" />
               </Form.Item>
             </Space>
           </Form>
