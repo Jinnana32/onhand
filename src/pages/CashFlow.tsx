@@ -33,7 +33,6 @@ import {
   InputNumber,
   DatePicker,
   Input,
-  Switch,
 } from 'antd';
 import {
   LeftOutlined,
@@ -49,17 +48,6 @@ import type { MenuProps } from 'antd';
 
 const { Title, Text } = Typography;
 const { Option } = Select;
-
-const expenseCategories = [
-  'Food',
-  'Transport',
-  'Shopping',
-  'Bills',
-  'Entertainment',
-  'Healthcare',
-  'Education',
-  'Other',
-];
 
 type ViewMode = 'calendar' | 'list';
 type FilterGroup =
