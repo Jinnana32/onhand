@@ -1533,30 +1533,43 @@ export function CashFlow() {
   };
 
   // Confirm creating expense override
-  const handleConfirmExpenseOverride = async () => {
+  const handleConfirmExpenseOverride = async (skipMonth: boolean = false) => {
     if (!editingExpenseOverride) return;
 
     try {
-      const values = await expenseOverrideForm.validateFields();
       const { expense } = editingExpenseOverride;
+
+      // For skip, use $0 and today's date
+      let amount = 0;
+      let expenseDate: string;
+
+      if (skipMonth) {
+        expenseDate = new Date().toISOString().split('T')[0];
+      } else {
+        const values = await expenseOverrideForm.validateFields();
+        amount = values.amount;
+        expenseDate = (values.expense_date as Dayjs).format('YYYY-MM-DD');
+      }
 
       // Create a one-time expense linked to the recurring expense
       // Use a special description pattern to identify it as an override
-      const expenseDate = (values.expense_date as Dayjs).format('YYYY-MM-DD');
-
       await createExpenseAsync({
         description: `${expense.name} (Override)`,
-        amount: values.amount,
+        amount,
         category: expense.category,
         expense_date: expenseDate,
         frequency: 'one_time',
         is_active: true,
-        is_paid: false, // Unpaid by default
+        is_paid: skipMonth ? true : false, // Skip expenses are marked as paid (since $0)
         // Store parent expense ID in description for now (we can add a proper field later)
         // The description pattern will help us identify and hide the recurring expense
       });
 
-      message.success('Expense override created successfully');
+      message.success(
+        skipMonth
+          ? 'Expense skipped for this month'
+          : 'Expense override created successfully'
+      );
       setEditingExpenseOverride(null);
       expenseOverrideForm.resetFields();
     } catch (error) {
@@ -1605,29 +1618,42 @@ export function CashFlow() {
   };
 
   // Confirm creating liability override
-  const handleConfirmLiabilityOverride = async () => {
+  const handleConfirmLiabilityOverride = async (skipMonth: boolean = false) => {
     if (!editingLiabilityOverride) return;
 
     try {
-      const values = await liabilityOverrideForm.validateFields();
       const { liability } = editingLiabilityOverride;
+
+      // For skip, use $0 and today's date
+      let amount = 0;
+      let expenseDate: string;
+
+      if (skipMonth) {
+        expenseDate = new Date().toISOString().split('T')[0];
+      } else {
+        const values = await liabilityOverrideForm.validateFields();
+        amount = values.amount;
+        expenseDate = (values.expense_date as Dayjs).format('YYYY-MM-DD');
+      }
 
       // Create a one-time expense linked to the liability
       // Use a special description pattern to identify it as an override
-      const expenseDate = (values.expense_date as Dayjs).format('YYYY-MM-DD');
-
       await createExpenseAsync({
         description: `${liability.name} (Override)`,
-        amount: values.amount,
+        amount,
         category: 'Bills',
         expense_date: expenseDate,
         frequency: 'one_time',
         is_active: true,
-        is_paid: false, // Unpaid by default
+        is_paid: skipMonth ? true : false, // Skip expenses are marked as paid (since $0)
         liability_id: liability.id, // Link to the liability
       });
 
-      message.success('Liability override created successfully');
+      message.success(
+        skipMonth
+          ? 'Liability skipped for this month'
+          : 'Liability override created successfully'
+      );
       setEditingLiabilityOverride(null);
       liabilityOverrideForm.resetFields();
     } catch (error) {
@@ -2777,10 +2803,26 @@ export function CashFlow() {
       <Modal
         open={editingLiabilityOverride !== null}
         onCancel={handleCancelLiabilityOverride}
-        onOk={handleConfirmLiabilityOverride}
+        footer={[
+          <Button key="cancel" onClick={handleCancelLiabilityOverride}>
+            Cancel
+          </Button>,
+          <Button
+            key="skip"
+            onClick={() => handleConfirmLiabilityOverride(true)}
+            style={{ color: '#faad14' }}
+          >
+            Skip This Month
+          </Button>,
+          <Button
+            key="submit"
+            type="primary"
+            onClick={() => handleConfirmLiabilityOverride(false)}
+          >
+            Create Override
+          </Button>,
+        ]}
         title="Edit Liability Override"
-        okText="Create Override"
-        cancelText="Cancel"
       >
         {editingLiabilityOverride && (
           <Form
@@ -2851,10 +2893,26 @@ export function CashFlow() {
       <Modal
         open={editingExpenseOverride !== null}
         onCancel={handleCancelExpenseOverride}
-        onOk={handleConfirmExpenseOverride}
+        footer={[
+          <Button key="cancel" onClick={handleCancelExpenseOverride}>
+            Cancel
+          </Button>,
+          <Button
+            key="skip"
+            onClick={() => handleConfirmExpenseOverride(true)}
+            style={{ color: '#faad14' }}
+          >
+            Skip This Month
+          </Button>,
+          <Button
+            key="submit"
+            type="primary"
+            onClick={() => handleConfirmExpenseOverride(false)}
+          >
+            Create Override
+          </Button>,
+        ]}
         title="Edit Expense Override"
-        okText="Create Override"
-        cancelText="Cancel"
       >
         {editingExpenseOverride && (
           <Form
