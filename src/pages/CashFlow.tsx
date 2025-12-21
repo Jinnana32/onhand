@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import dayjs, { Dayjs } from 'dayjs';
 import {
   useLiabilities,
   useExpenses,
@@ -29,6 +30,7 @@ import {
   message,
   Form,
   InputNumber,
+  DatePicker,
 } from 'antd';
 import {
   LeftOutlined,
@@ -99,6 +101,7 @@ export function CashFlow() {
   const [cashForm] = Form.useForm();
   const [expenseForm] = Form.useForm();
   const [billForm] = Form.useForm();
+  const [expenseOverrideForm] = Form.useForm();
   const [pendingIncome, setPendingIncome] = useState<{
     income: {
       id: string;
@@ -115,6 +118,17 @@ export function CashFlow() {
       id: string;
       name: string;
       amount: number;
+      frequency: 'monthly' | 'weekly';
+    };
+    year: number;
+    month: number;
+  } | null>(null);
+  const [editingExpenseOverride, setEditingExpenseOverride] = useState<{
+    expense: {
+      id: string;
+      name: string;
+      amount: number;
+      category: string | null;
       frequency: 'monthly' | 'weekly';
     };
     year: number;
@@ -304,6 +318,13 @@ export function CashFlow() {
       const activeRecurringExpenses = expenses.filter(
         (e) => e.is_active && e.frequency !== 'one_time'
       );
+
+      // Get all override expenses (one-time expenses with "(Override)" in description)
+      const overrideExpenses = expenses.filter(
+        (e) =>
+          e.frequency === 'one_time' && e.description.includes('(Override)')
+      );
+
       activeRecurringExpenses.forEach((expense) => {
         if (!expense.due_date || !expense.start_date) return;
 
@@ -323,6 +344,22 @@ export function CashFlow() {
           dueDate.getDate() === dueDay &&
           dueDate.getMonth() === selectedMonth
         ) {
+          // Check if there's an override expense for this recurring expense in this month
+          // Override expenses have the pattern: "{expense.description} (Override)"
+          const hasOverride = overrideExpenses.some((override) => {
+            const overrideDate = new Date(override.expense_date);
+            return (
+              override.description === `${expense.description} (Override)` &&
+              overrideDate.getMonth() === selectedMonth &&
+              overrideDate.getFullYear() === selectedYear
+            );
+          });
+
+          // Skip this recurring expense if an override exists for this month
+          if (hasOverride) {
+            return;
+          }
+
           bills.push({
             type: 'expense',
             id: expense.id,
@@ -1431,6 +1468,76 @@ export function CashFlow() {
     expenseForm.resetFields();
   };
 
+  // Handle opening edit override modal for recurring expense
+  const handleEditExpenseOverride = (
+    bill: {
+      type: 'liability' | 'expense' | 'income';
+      id: string;
+      name: string;
+      amount: number;
+      category?: string;
+      frequency?: 'monthly' | 'weekly' | 'one_time';
+    },
+    year: number,
+    month: number
+  ) => {
+    if (bill.type !== 'expense' || bill.frequency === 'one_time') return;
+
+    setEditingExpenseOverride({
+      expense: {
+        id: bill.id,
+        name: bill.name,
+        amount: bill.amount,
+        category: bill.category || null,
+        frequency: bill.frequency as 'monthly' | 'weekly',
+      },
+      year,
+      month,
+    });
+  };
+
+  // Confirm creating expense override
+  const handleConfirmExpenseOverride = async () => {
+    if (!editingExpenseOverride) return;
+
+    try {
+      const values = await expenseOverrideForm.validateFields();
+      const { expense } = editingExpenseOverride;
+
+      // Create a one-time expense linked to the recurring expense
+      // Use a special description pattern to identify it as an override
+      const expenseDate = (values.expense_date as Dayjs).format('YYYY-MM-DD');
+
+      await createExpenseAsync({
+        description: `${expense.name} (Override)`,
+        amount: values.amount,
+        category: expense.category,
+        expense_date: expenseDate,
+        frequency: 'one_time',
+        is_active: true,
+        is_paid: false, // Unpaid by default
+        // Store parent expense ID in description for now (we can add a proper field later)
+        // The description pattern will help us identify and hide the recurring expense
+      });
+
+      message.success('Expense override created successfully');
+      setEditingExpenseOverride(null);
+      expenseOverrideForm.resetFields();
+    } catch (error) {
+      // Form validation error - don't show error message
+      if (error && typeof error === 'object' && 'errorFields' in error) {
+        return;
+      }
+      console.error('Error creating expense override:', error);
+      message.error('Failed to create expense override. Please try again.');
+    }
+  };
+
+  const handleCancelExpenseOverride = () => {
+    setEditingExpenseOverride(null);
+    expenseOverrideForm.resetFields();
+  };
+
   // Handle marking income as received
   const handleMarkIncomeReceived = (
     income: {
@@ -1934,7 +2041,7 @@ export function CashFlow() {
                                   ) : null
                                 }
                               />
-                              <div>
+                              <Space>
                                 <Text
                                   strong
                                   delete={
@@ -1956,7 +2063,24 @@ export function CashFlow() {
                                   {bill.type === 'income' ? '+' : '-'}
                                   {formatCurrency(bill.amount)}
                                 </Text>
-                              </div>
+                                {bill.type === 'expense' &&
+                                  bill.frequency !== 'one_time' &&
+                                  !bill.isPaid && (
+                                    <Button
+                                      type="text"
+                                      size="small"
+                                      icon={<EditOutlined />}
+                                      onClick={() =>
+                                        handleEditExpenseOverride(
+                                          bill,
+                                          selectedYear,
+                                          selectedMonth
+                                        )
+                                      }
+                                      style={{ color: '#1890ff' }}
+                                    />
+                                  )}
+                              </Space>
                             </List.Item>
                           );
                         }}
@@ -2301,28 +2425,47 @@ export function CashFlow() {
                                         ) : null
                                       }
                                     />
-                                    <Text
-                                      strong
-                                      delete={
-                                        bill.isPaid ||
-                                        (bill.type === 'income' &&
-                                          bill.isReceived)
-                                      }
-                                      style={{
-                                        fontSize: '14px',
-                                        color:
+                                    <Space>
+                                      <Text
+                                        strong
+                                        delete={
                                           bill.isPaid ||
                                           (bill.type === 'income' &&
                                             bill.isReceived)
-                                            ? '#9ca3af'
-                                            : bill.type === 'income'
-                                            ? '#16a34a'
-                                            : '#dc2626',
-                                      }}
-                                    >
-                                      {bill.type === 'income' ? '+' : '-'}
-                                      {formatCurrency(bill.amount)}
-                                    </Text>
+                                        }
+                                        style={{
+                                          fontSize: '14px',
+                                          color:
+                                            bill.isPaid ||
+                                            (bill.type === 'income' &&
+                                              bill.isReceived)
+                                              ? '#9ca3af'
+                                              : bill.type === 'income'
+                                              ? '#16a34a'
+                                              : '#dc2626',
+                                        }}
+                                      >
+                                        {bill.type === 'income' ? '+' : '-'}
+                                        {formatCurrency(bill.amount)}
+                                      </Text>
+                                      {bill.type === 'expense' &&
+                                        bill.frequency !== 'one_time' &&
+                                        !bill.isPaid && (
+                                          <Button
+                                            type="text"
+                                            size="small"
+                                            icon={<EditOutlined />}
+                                            onClick={() =>
+                                              handleEditExpenseOverride(
+                                                bill,
+                                                year,
+                                                month
+                                              )
+                                            }
+                                            style={{ color: '#1890ff' }}
+                                          />
+                                        )}
+                                    </Space>
                                   </List.Item>
                                 );
                               }}
@@ -2486,6 +2629,80 @@ export function CashFlow() {
                     pendingExpense.expense.amount
                   )}`}
                 />
+              </Form.Item>
+            </Space>
+          </Form>
+        )}
+      </Modal>
+
+      {/* Edit Expense Override Modal */}
+      <Modal
+        open={editingExpenseOverride !== null}
+        onCancel={handleCancelExpenseOverride}
+        onOk={handleConfirmExpenseOverride}
+        title="Edit Expense Override"
+        okText="Create Override"
+        cancelText="Cancel"
+      >
+        {editingExpenseOverride && (
+          <Form
+            key={editingExpenseOverride.expense.id}
+            form={expenseOverrideForm}
+            layout="vertical"
+            initialValues={{
+              amount: editingExpenseOverride.expense.amount,
+              expense_date: dayjs(
+                new Date(
+                  editingExpenseOverride.year,
+                  editingExpenseOverride.month,
+                  1
+                )
+              ),
+            }}
+          >
+            <Space direction="vertical" size="large" style={{ width: '100%' }}>
+              <Alert
+                message="Create Expense Override"
+                description="This will create a one-time expense with the specified amount and date. The recurring expense will be hidden for this month."
+                type="info"
+                showIcon
+              />
+              <Descriptions column={1} bordered size="small">
+                <Descriptions.Item label="Expense Name">
+                  {editingExpenseOverride.expense.name}
+                </Descriptions.Item>
+                <Descriptions.Item label="Original Amount">
+                  {formatCurrency(editingExpenseOverride.expense.amount)}
+                </Descriptions.Item>
+              </Descriptions>
+              <Form.Item
+                label="Amount"
+                name="amount"
+                rules={[
+                  { required: true, message: 'Please enter an amount' },
+                  {
+                    type: 'number',
+                    min: 0.01,
+                    message: 'Amount must be greater than 0',
+                  },
+                ]}
+              >
+                <InputNumber
+                  style={{ width: '100%' }}
+                  prefix="₱"
+                  min={0}
+                  step={0.01}
+                  precision={2}
+                />
+              </Form.Item>
+              <Form.Item
+                label="Expense Date"
+                name="expense_date"
+                rules={[
+                  { required: true, message: 'Please select an expense date' },
+                ]}
+              >
+                <DatePicker style={{ width: '100%' }} format="YYYY-MM-DD" />
               </Form.Item>
             </Space>
           </Form>

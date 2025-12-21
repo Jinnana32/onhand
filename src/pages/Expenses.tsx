@@ -18,7 +18,7 @@ import {
   Card,
   Skeleton
 } from 'antd'
-import { PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons'
+import { PlusOutlined, EditOutlined, DeleteOutlined, SearchOutlined } from '@ant-design/icons'
 import dayjs, { Dayjs } from 'dayjs'
 import { useExpenses, useLiabilities } from '../hooks'
 import { Expense } from '../types/database.types'
@@ -55,6 +55,11 @@ export function Expenses() {
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [searchText, setSearchText] = useState('')
+  const [selectedCategory, setSelectedCategory] = useState<string | undefined>(undefined)
+  const [selectedFrequency, setSelectedFrequency] = useState<string | undefined>(undefined)
+  const [selectedStatus, setSelectedStatus] = useState<string | undefined>(undefined)
+  const [selectedLinkedTo, setSelectedLinkedTo] = useState<string | undefined>(undefined)
 
   // Create a map of liability_id to liability name for quick lookup
   const liabilityMap = useMemo(() => {
@@ -106,20 +111,20 @@ export function Expenses() {
       const values = await form.validateFields()
       const amount = values.amount
 
-      if (isNaN(amount) || amount <= 0) {
+    if (isNaN(amount) || amount <= 0) {
         message.error('Please enter a valid amount')
-        return
-      }
+      return
+    }
 
       const dueDate = values.due_date ? parseInt(values.due_date.toString()) : null
       if (values.frequency !== 'one_time' && (!dueDate || dueDate < 1 || dueDate > 31)) {
         message.error('Please enter a valid due date (1-31) for recurring expenses')
-        return
-      }
+      return
+    }
 
-      const input = {
+    const input = {
         description: values.description,
-        amount,
+      amount,
         category: values.category || null,
         expense_date: values.frequency === 'one_time' 
           ? (values.expense_date as Dayjs).format('YYYY-MM-DD')
@@ -131,34 +136,34 @@ export function Expenses() {
           : null,
         is_active: values.is_active,
         is_paid: values.is_paid !== undefined ? values.is_paid : (values.frequency === 'one_time' ? true : false),
-      }
+    }
 
-      if (editingExpense) {
-        updateExpense(
-          {
-            id: editingExpense.id,
-            updates: input,
-          },
-          {
-            onSuccess: () => {
-              message.success('Expense updated successfully')
-              handleCloseModal()
-            },
-            onError: (error: Error) => {
-              message.error('Error updating expense: ' + (error instanceof Error ? error.message : 'Unknown error'))
-            },
-          }
-        )
-      } else {
-        createExpense(input, {
+    if (editingExpense) {
+      updateExpense(
+        {
+          id: editingExpense.id,
+          updates: input,
+        },
+        {
           onSuccess: () => {
-            message.success('Expense created successfully')
+              message.success('Expense updated successfully')
             handleCloseModal()
           },
           onError: (error: Error) => {
-            message.error('Error creating expense: ' + (error instanceof Error ? error.message : 'Unknown error'))
+              message.error('Error updating expense: ' + (error instanceof Error ? error.message : 'Unknown error'))
           },
-        })
+        }
+      )
+    } else {
+      createExpense(input, {
+        onSuccess: () => {
+            message.success('Expense created successfully')
+          handleCloseModal()
+        },
+        onError: (error: Error) => {
+            message.error('Error creating expense: ' + (error instanceof Error ? error.message : 'Unknown error'))
+        },
+      })
       }
     } catch (error) {
       // Form validation errors are handled by Ant Design
@@ -166,18 +171,77 @@ export function Expenses() {
   }
 
   const handleDelete = (id: string) => {
-    setDeletingId(id)
-    deleteExpense(id, {
-      onSuccess: () => {
+      setDeletingId(id)
+      deleteExpense(id, {
+        onSuccess: () => {
         message.success('Expense deleted successfully')
-        setDeletingId(null)
-      },
-      onError: (error: Error) => {
+          setDeletingId(null)
+        },
+        onError: (error: Error) => {
         message.error('Error deleting expense: ' + (error instanceof Error ? error.message : 'Unknown error'))
-        setDeletingId(null)
-      },
+          setDeletingId(null)
+        },
+      })
+    }
+
+  // Filter expenses based on search and filters
+  const filteredExpenses = useMemo(() => {
+    return expenses.filter((expense) => {
+      // Search filter
+      if (searchText) {
+        const searchLower = searchText.toLowerCase()
+        const descriptionMatch = expense.description.toLowerCase().includes(searchLower)
+        const linkedToMatch = expense.liability_id && liabilityMap.has(expense.liability_id)
+          ? liabilityMap.get(expense.liability_id)!.toLowerCase().includes(searchLower)
+          : false
+        if (!descriptionMatch && !linkedToMatch) {
+          return false
+        }
+      }
+
+      // Category filter
+      if (selectedCategory) {
+        if (expense.category !== selectedCategory) {
+          return false
+        }
+      }
+
+      // Frequency filter
+      if (selectedFrequency) {
+        if (expense.frequency !== selectedFrequency) {
+          return false
+        }
+      }
+
+      // Status filter
+      if (selectedStatus) {
+        if (selectedStatus === 'active' && !expense.is_active) {
+          return false
+        }
+        if (selectedStatus === 'inactive' && expense.is_active) {
+          return false
+        }
+        if (selectedStatus === 'paid' && !expense.is_paid) {
+          return false
+        }
+        if (selectedStatus === 'unpaid' && expense.is_paid) {
+          return false
+        }
+      }
+
+      // Linked To filter
+      if (selectedLinkedTo) {
+        if (selectedLinkedTo === 'none' && expense.liability_id) {
+          return false
+        }
+        if (selectedLinkedTo !== 'none' && expense.liability_id !== selectedLinkedTo) {
+          return false
+        }
+      }
+
+      return true
     })
-  }
+  }, [expenses, searchText, selectedCategory, selectedFrequency, selectedStatus, selectedLinkedTo, liabilityMap])
 
   const columns = [
     {
@@ -313,6 +377,88 @@ export function Expenses() {
         </Button>
       </div>
 
+      {/* Search and Filters */}
+      {expenses.length > 0 && (
+        <Card style={{ marginBottom: 24 }}>
+          <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+            <Input
+              placeholder="Search expenses by description or linked liability..."
+              prefix={<SearchOutlined />}
+              value={searchText}
+              onChange={(e) => setSearchText(e.target.value)}
+              allowClear
+              style={{ width: '100%' }}
+            />
+            <Space wrap>
+              <Select
+                placeholder="Filter by Category"
+                value={selectedCategory}
+                onChange={setSelectedCategory}
+                allowClear
+                style={{ width: 150 }}
+              >
+                {expenseCategories.map((cat) => (
+                  <Option key={cat} value={cat}>
+                    {cat}
+                  </Option>
+                ))}
+              </Select>
+              <Select
+                placeholder="Filter by Type"
+                value={selectedFrequency}
+                onChange={setSelectedFrequency}
+                allowClear
+                style={{ width: 150 }}
+              >
+                <Option value="one_time">One Time</Option>
+                <Option value="monthly">Monthly</Option>
+                <Option value="weekly">Weekly</Option>
+              </Select>
+              <Select
+                placeholder="Filter by Status"
+                value={selectedStatus}
+                onChange={setSelectedStatus}
+                allowClear
+                style={{ width: 150 }}
+              >
+                <Option value="active">Active</Option>
+                <Option value="inactive">Inactive</Option>
+                <Option value="paid">Paid</Option>
+                <Option value="unpaid">Unpaid</Option>
+              </Select>
+              <Select
+                placeholder="Filter by Linked To"
+                value={selectedLinkedTo}
+                onChange={setSelectedLinkedTo}
+                allowClear
+                style={{ width: 200 }}
+              >
+                <Option value="none">Not Linked</Option>
+                {liabilities?.map((liability) => (
+                  <Option key={liability.id} value={liability.id}>
+                    {liability.name}
+                  </Option>
+                ))}
+              </Select>
+              {(searchText || selectedCategory || selectedFrequency || selectedStatus || selectedLinkedTo) && (
+                <Button
+                  type="link"
+                  onClick={() => {
+                    setSearchText('')
+                    setSelectedCategory(undefined)
+                    setSelectedFrequency(undefined)
+                    setSelectedStatus(undefined)
+                    setSelectedLinkedTo(undefined)
+                  }}
+                >
+                  Clear all filters
+                </Button>
+              )}
+            </Space>
+          </Space>
+        </Card>
+      )}
+
       {expenses.length === 0 ? (
         <Card>
           <Empty
@@ -321,12 +467,12 @@ export function Expenses() {
                 <p>No expenses logged yet.</p>
                 <Button
                   type="link"
-                  onClick={() => handleOpenModal()}
+            onClick={() => handleOpenModal()}
                   style={{ marginTop: 8 }}
-                >
-                  Log your first expense
+          >
+            Log your first expense
                 </Button>
-              </div>
+        </div>
             }
           />
         </Card>
@@ -334,12 +480,13 @@ export function Expenses() {
         <Card>
           <Table
             columns={columns}
-            dataSource={expenses}
+            dataSource={filteredExpenses}
             rowKey="id"
             pagination={{
               pageSize: 10,
               showSizeChanger: true,
-              showTotal: (total) => `Total ${total} expenses`,
+              showTotal: (total, range) => 
+                `${range[0]}-${range[1]} of ${total} expenses${searchText || selectedCategory || selectedFrequency || selectedStatus || selectedLinkedTo ? ` (filtered from ${expenses.length})` : ''}`,
             }}
             scroll={{ x: 'max-content' }}
           />
@@ -455,8 +602,8 @@ export function Expenses() {
                   >
                     <DatePicker style={{ width: '100%' }} />
                     <div style={{ fontSize: '12px', color: '#6b7280', marginTop: 4 }}>
-                      When does this recurring expense start?
-                    </div>
+                  When does this recurring expense start?
+              </div>
                   </Form.Item>
 
                   <Form.Item
@@ -471,11 +618,11 @@ export function Expenses() {
                       style={{ width: '100%' }}
                       min={1}
                       max={31}
-                      placeholder="15"
-                    />
+                  placeholder="15"
+                />
                     <div style={{ fontSize: '12px', color: '#6b7280', marginTop: 4 }}>
-                      What day of the month is this bill due?
-                    </div>
+                  What day of the month is this bill due?
+              </div>
                   </Form.Item>
 
                   <Form.Item
@@ -494,7 +641,7 @@ export function Expenses() {
                     <Switch />
                     <div style={{ fontSize: '12px', color: '#6b7280', marginTop: 4 }}>
                       Mark as paid if you've already paid this expense. Unpaid expenses won't deduct from your cash.
-                    </div>
+          </div>
                   </Form.Item>
                 </>
               )
