@@ -121,7 +121,7 @@ export function Expenses() {
         category: values.category || null,
         expense_date: values.frequency === 'one_time' 
           ? (values.expense_date as Dayjs).format('YYYY-MM-DD')
-          : (values.start_date as Dayjs).format('YYYY-MM-DD'),
+          : new Date().toISOString().split('T')[0], // For recurring expenses, use creation date
         frequency: values.frequency,
         due_date: values.frequency !== 'one_time' ? dueDate : null,
         start_date: values.frequency !== 'one_time' 
