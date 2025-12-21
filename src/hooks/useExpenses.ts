@@ -40,6 +40,7 @@ interface CreateExpenseInput {
   due_date?: number | null
   start_date?: string | null
   liability_id?: string | null // Link to liability when marking as paid
+  budget_id?: string | null // Link to budget (expense deducts from budget, not cash)
   is_active?: boolean
   is_paid?: boolean // Whether the expense has been paid
 }
@@ -94,6 +95,7 @@ export function useExpenses() {
           due_date: input.due_date || null,
           start_date: input.start_date || (frequency !== 'one_time' ? new Date().toISOString().split('T')[0] : null),
           liability_id: input.liability_id || null,
+          budget_id: input.budget_id || null,
           is_active: input.is_active !== undefined ? input.is_active : true,
           is_paid: isPaid,
         })
@@ -102,10 +104,12 @@ export function useExpenses() {
 
       if (error) throw error
 
-      // Only subtract expense amount from current_cash if it's paid
-      if (data.is_paid) {
+      // Only subtract expense amount from current_cash if it's paid AND not linked to a budget
+      // Budget-linked expenses deduct from budget amount, not cash
+      if (data.is_paid && !data.budget_id) {
         await updateCurrentCash(-input.amount)
       }
+      // If linked to budget, the budget remaining amount will be calculated on read
 
       return data as Expense
     },
@@ -119,10 +123,10 @@ export function useExpenses() {
   // Update expense
   const updateMutation = useMutation({
     mutationFn: async ({ id, updates }: { id: string; updates: UpdateExpenseInput }) => {
-      // Get the existing expense to check previous amount and paid status
+      // Get the existing expense to check previous amount, paid status, and budget_id
       const { data: existing, error: fetchError } = await supabase
         .from('expenses')
-        .select('amount, is_paid')
+        .select('amount, is_paid, budget_id')
         .eq('id', id)
         .single()
 
@@ -137,30 +141,38 @@ export function useExpenses() {
 
       if (error) throw error
 
-      // Handle cash updates based on paid status changes
-      const wasPaid = existing.is_paid
-      const isNowPaid = updates.is_paid !== undefined ? updates.is_paid : wasPaid
-      const amountChanged = updates.amount !== undefined && updates.amount !== existing.amount
+      // Get the new budget_id (use updated value if provided, otherwise keep existing)
+      const newBudgetId = updates.budget_id !== undefined ? updates.budget_id : existing.budget_id
 
-      if (wasPaid !== isNowPaid) {
-        // Paid status changed
-        if (isNowPaid && !wasPaid) {
-          // Marked as paid: deduct from cash
-          await updateCurrentCash(-(updates.amount || existing.amount))
-        } else if (!isNowPaid && wasPaid) {
-          // Marked as unpaid: add back to cash
-          await updateCurrentCash(existing.amount)
+      // Only update cash if expense is NOT linked to a budget (budget-linked expenses affect budget, not cash)
+      if (!newBudgetId) {
+        // Handle cash updates based on paid status changes
+        const wasPaid = existing.is_paid
+        const isNowPaid = updates.is_paid !== undefined ? updates.is_paid : wasPaid
+        const amountChanged = updates.amount !== undefined && updates.amount !== existing.amount
+
+        if (wasPaid !== isNowPaid) {
+          // Paid status changed
+          if (isNowPaid && !wasPaid) {
+            // Marked as paid: deduct from cash
+            await updateCurrentCash(-(updates.amount || existing.amount))
+          } else if (!isNowPaid && wasPaid) {
+            // Marked as unpaid: add back to cash
+            await updateCurrentCash(existing.amount)
+          }
+        } else if (amountChanged && isNowPaid) {
+          // Amount changed and expense is paid: adjust cash by the difference
+          const difference = existing.amount - (updates.amount || existing.amount) // Old - New (positive if expense decreased)
+          await updateCurrentCash(difference)
         }
-      } else if (amountChanged && isNowPaid) {
-        // Amount changed and expense is paid: adjust cash by the difference
-        const difference = existing.amount - (updates.amount || existing.amount) // Old - New (positive if expense decreased)
-        await updateCurrentCash(difference)
       }
+      // If linked to budget, budget remaining amount will be recalculated on read
 
       return data as Expense
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.expenses('current') })
+      queryClient.invalidateQueries({ queryKey: queryKeys.budgets('current') })
       queryClient.invalidateQueries({ queryKey: queryKeys.financialSummary('current') })
       queryClient.invalidateQueries({ queryKey: queryKeys.profile('current') })
     },
@@ -169,10 +181,10 @@ export function useExpenses() {
   // Delete expense
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
-      // Get the expense before deleting to get the amount and paid status
+      // Get the expense before deleting to get the amount, paid status, and budget_id
       const { data: existing, error: fetchError } = await supabase
         .from('expenses')
-        .select('amount, is_paid')
+        .select('amount, is_paid, budget_id')
         .eq('id', id)
         .single()
 
@@ -185,13 +197,16 @@ export function useExpenses() {
 
       if (error) throw error
 
-      // Only add expense amount back to current_cash if it was paid (undo the deduction)
-      if (existing.is_paid) {
+      // Only add expense amount back to current_cash if it was paid AND not linked to a budget
+      // Budget-linked expenses affect budget, not cash
+      if (existing.is_paid && !existing.budget_id) {
         await updateCurrentCash(existing.amount)
       }
+      // If linked to budget, budget remaining amount will be recalculated on read
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.expenses('current') })
+      queryClient.invalidateQueries({ queryKey: queryKeys.budgets('current') })
       queryClient.invalidateQueries({ queryKey: queryKeys.financialSummary('current') })
       queryClient.invalidateQueries({ queryKey: queryKeys.profile('current') })
     },

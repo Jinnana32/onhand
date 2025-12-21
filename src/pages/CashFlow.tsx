@@ -248,6 +248,17 @@ export function CashFlow() {
       isReceived?: boolean; // For income: whether it has been received
       frequency?: 'monthly' | 'weekly' | 'one_time'; // For expenses: frequency type
       liability?: { start_date: string | null; months_to_pay: number | null }; // For payment counter
+      budgetExpenses?: Array<{
+        // For budgets: nested expenses
+        type: 'expense';
+        id: string;
+        name: string;
+        amount: number;
+        category: string;
+        dueDate: Date;
+        isPaid: boolean;
+        frequency?: 'monthly' | 'weekly' | 'one_time';
+      }>;
     }> = [];
     const selectedMonthDate = new Date(selectedYear, selectedMonth, 1);
     const selectedMonthEndDate = new Date(selectedYear, selectedMonth + 1, 0);
@@ -672,7 +683,7 @@ export function CashFlow() {
       });
     }
 
-    // Process budgets
+    // Process budgets and their linked expenses
     if (budgets) {
       const activeBudgets = budgets.filter((budget) => budget.is_active);
       activeBudgets.forEach((budget) => {
@@ -686,6 +697,21 @@ export function CashFlow() {
           budgetDate.getMonth() === selectedMonth &&
           budgetDate.getFullYear() === selectedYear
         ) {
+          // Get expenses linked to this budget that fall in the selected month
+          const budgetExpenses =
+            expenses?.filter((expense) => {
+              if (expense.budget_id !== budget.id || !expense.is_active)
+                return false;
+
+              const expenseDate = new Date(expense.expense_date);
+              expenseDate.setHours(0, 0, 0, 0);
+
+              return (
+                expenseDate.getMonth() === selectedMonth &&
+                expenseDate.getFullYear() === selectedYear
+              );
+            }) || [];
+
           bills.push({
             type: 'budget',
             id: budget.id,
@@ -693,7 +719,17 @@ export function CashFlow() {
             amount: budget.amount,
             category: 'Budget',
             dueDate: budgetDate,
-            isPaid: true, // Budgets are always "paid" since they're already deducted from cash
+            isPaid: false, // Budgets are never "paid" - they're containers, not strikethrough
+            budgetExpenses: budgetExpenses.map((expense) => ({
+              type: 'expense' as const,
+              id: expense.id,
+              name: expense.description,
+              amount: expense.amount,
+              category: expense.category || 'Bills',
+              dueDate: new Date(expense.expense_date),
+              isPaid: expense.is_paid || false,
+              frequency: expense.frequency,
+            })),
           });
         }
       });
@@ -997,6 +1033,17 @@ export function CashFlow() {
         isReceived?: boolean; // For income: whether it has been received
         frequency?: 'monthly' | 'weekly' | 'one_time'; // For expenses: frequency type
         liability?: { start_date: string | null; months_to_pay: number | null }; // For payment counter
+        budgetExpenses?: Array<{
+          // For budgets: nested expenses
+          type: 'expense';
+          id: string;
+          name: string;
+          amount: number;
+          category: string;
+          dueDate: Date;
+          isPaid: boolean;
+          frequency?: 'monthly' | 'weekly' | 'one_time';
+        }>;
       }>
     > = {};
 
@@ -1123,10 +1170,14 @@ export function CashFlow() {
         });
       }
 
-      // Process one-time expenses
+      // Process one-time expenses (excluding overrides and budget-linked expenses - they're handled separately)
       if (expenses) {
         const activeOneTimeExpenses = expenses.filter(
-          (e) => e.is_active && e.frequency === 'one_time'
+          (e) =>
+            e.is_active &&
+            e.frequency === 'one_time' &&
+            !e.description.includes('(Override)') &&
+            !e.budget_id // Exclude budget-linked expenses (they're shown under budgets)
         );
         activeOneTimeExpenses.forEach((expense) => {
           if (!expense.expense_date) return;
@@ -1324,7 +1375,7 @@ export function CashFlow() {
         });
       }
 
-      // Process budgets
+      // Process budgets and their linked expenses
       if (budgets) {
         const activeBudgets = budgets.filter((budget) => budget.is_active);
         activeBudgets.forEach((budget) => {
@@ -1338,6 +1389,21 @@ export function CashFlow() {
             budgetDate.getMonth() === targetMonth &&
             budgetDate.getFullYear() === targetYear
           ) {
+            // Get expenses linked to this budget that fall in the target month
+            const budgetExpenses =
+              expenses?.filter((expense) => {
+                if (expense.budget_id !== budget.id || !expense.is_active)
+                  return false;
+
+                const expenseDate = new Date(expense.expense_date);
+                expenseDate.setHours(0, 0, 0, 0);
+
+                return (
+                  expenseDate.getMonth() === targetMonth &&
+                  expenseDate.getFullYear() === targetYear
+                );
+              }) || [];
+
             monthsData[monthKey].push({
               type: 'budget',
               id: budget.id,
@@ -1345,7 +1411,17 @@ export function CashFlow() {
               amount: budget.amount,
               category: 'Budget',
               dueDate: budgetDate,
-              isPaid: true, // Budgets are always "paid" since they're already deducted from cash
+              isPaid: false, // Budgets are never "paid" - they're containers, not strikethrough
+              budgetExpenses: budgetExpenses.map((expense) => ({
+                type: 'expense' as const,
+                id: expense.id,
+                name: expense.description,
+                amount: expense.amount,
+                category: expense.category || 'Bills',
+                dueDate: new Date(expense.expense_date),
+                isPaid: expense.is_paid || false,
+                frequency: expense.frequency,
+              })),
             });
           }
         });
@@ -2213,149 +2289,211 @@ export function CashFlow() {
                       <List
                         dataSource={dayBills}
                         renderItem={(bill, index) => {
+                          // Budgets are never completed (no strikethrough)
                           const isCompleted =
-                            bill.isPaid ||
-                            (bill.type === 'income' && bill.isReceived);
+                            bill.type === 'budget'
+                              ? false
+                              : bill.isPaid ||
+                                (bill.type === 'income' && bill.isReceived);
+
+                          // Calculate budget remaining amount if it's a budget
+                          const budgetRemaining =
+                            bill.type === 'budget' && bill.budgetExpenses
+                              ? bill.amount -
+                                bill.budgetExpenses
+                                  .filter((e: { isPaid: boolean }) => e.isPaid)
+                                  .reduce(
+                                    (sum: number, e: { amount: number }) =>
+                                      sum + e.amount,
+                                    0
+                                  )
+                              : null;
+
                           return (
-                            <List.Item
-                              key={`${bill.type}-${bill.id}-${index}`}
-                              style={{
-                                opacity: isCompleted ? 0.6 : 1,
-                                padding: '12px 0',
-                                borderBottom:
-                                  index < dayBills.length - 1
-                                    ? '1px solid #f0f0f0'
-                                    : 'none',
-                              }}
-                            >
-                              <List.Item.Meta
-                                avatar={
-                                  bill.type === 'liability' ? (
-                                    <Checkbox
-                                      checked={bill.isPaid}
-                                      disabled={bill.isPaid}
-                                      onChange={() =>
-                                        handleTogglePaid(
-                                          bill,
-                                          selectedYear,
-                                          selectedMonth
-                                        )
-                                      }
-                                    />
-                                  ) : bill.type === 'expense' &&
-                                    !bill.isPaid ? (
-                                    <Checkbox
-                                      checked={false}
-                                      onChange={() =>
-                                        handleMarkExpensePaid(
-                                          bill,
-                                          selectedYear,
-                                          selectedMonth
-                                        )
-                                      }
-                                    />
-                                  ) : bill.type === 'income' ? (
-                                    <Checkbox
-                                      checked={bill.isReceived || false}
-                                      disabled={bill.isReceived || false}
-                                      onChange={() => {
-                                        const originalIncome =
-                                          incomeSources?.find(
-                                            (inc) =>
-                                              inc.id === bill.id ||
-                                              bill.id.startsWith(inc.id)
-                                          );
-                                        handleMarkIncomeReceived(
-                                          {
-                                            id: bill.id,
-                                            name: bill.name,
-                                            amount: bill.amount,
-                                            frequency:
-                                              originalIncome?.frequency,
-                                            category: originalIncome?.category,
-                                          },
-                                          selectedYear,
-                                          selectedMonth
-                                        );
-                                      }}
-                                    />
-                                  ) : null
-                                }
-                                title={
-                                  <Space>
-                                    <Text
-                                      delete={isCompleted}
-                                      strong={!isCompleted}
-                                    >
-                                      {bill.name}
-                                    </Text>
-                                    <Tag
-                                      color={getCategoryColor(
-                                        bill.type,
-                                        bill.category,
-                                        bill.payment_type
-                                      )}
-                                    >
-                                      {bill.type === 'budget'
-                                        ? 'Budget'
-                                        : bill.type === 'expense'
-                                        ? 'Recurring Expense'
-                                        : getCategoryLabel(
-                                            bill.type,
-                                            bill.category,
-                                            bill.payment_type,
-                                            bill.liability,
+                            <div key={`${bill.type}-${bill.id}-${index}`}>
+                              <List.Item
+                                style={{
+                                  opacity: isCompleted ? 0.6 : 1,
+                                  padding: '12px 0',
+                                  borderBottom:
+                                    index < dayBills.length - 1 ||
+                                    (bill.type === 'budget' &&
+                                      bill.budgetExpenses &&
+                                      bill.budgetExpenses.length > 0)
+                                      ? '1px solid #f0f0f0'
+                                      : 'none',
+                                }}
+                              >
+                                <List.Item.Meta
+                                  avatar={
+                                    bill.type ===
+                                    'budget' ? null : bill.type ===
+                                      'liability' ? (
+                                      <Checkbox
+                                        checked={bill.isPaid}
+                                        disabled={bill.isPaid}
+                                        onChange={() =>
+                                          handleTogglePaid(
+                                            bill,
                                             selectedYear,
                                             selectedMonth
-                                          )}
-                                    </Tag>
-                                  </Space>
-                                }
-                                description={
-                                  bill.source ? (
-                                    <Text
-                                      type="secondary"
-                                      style={{ fontSize: '12px' }}
-                                    >
-                                      {bill.source}
-                                    </Text>
-                                  ) : null
-                                }
-                              />
-                              <Space>
-                                <Text
-                                  strong
-                                  delete={
-                                    bill.isPaid ||
-                                    (bill.type === 'income' && bill.isReceived)
+                                          )
+                                        }
+                                      />
+                                    ) : bill.type === 'expense' &&
+                                      !bill.isPaid ? (
+                                      <Checkbox
+                                        checked={false}
+                                        onChange={() =>
+                                          handleMarkExpensePaid(
+                                            bill,
+                                            selectedYear,
+                                            selectedMonth
+                                          )
+                                        }
+                                      />
+                                    ) : bill.type === 'income' ? (
+                                      <Checkbox
+                                        checked={bill.isReceived || false}
+                                        disabled={bill.isReceived || false}
+                                        onChange={() => {
+                                          const originalIncome =
+                                            incomeSources?.find(
+                                              (inc) =>
+                                                inc.id === bill.id ||
+                                                bill.id.startsWith(inc.id)
+                                            );
+                                          handleMarkIncomeReceived(
+                                            {
+                                              id: bill.id,
+                                              name: bill.name,
+                                              amount: bill.amount,
+                                              frequency:
+                                                originalIncome?.frequency,
+                                              category:
+                                                originalIncome?.category,
+                                            },
+                                            selectedYear,
+                                            selectedMonth
+                                          );
+                                        }}
+                                      />
+                                    ) : null
                                   }
-                                  style={{
-                                    fontSize: '16px',
-                                    color:
-                                      bill.isPaid ||
-                                      (bill.type === 'income' &&
-                                        bill.isReceived)
-                                        ? '#9ca3af'
-                                        : bill.type === 'income'
-                                        ? '#16a34a'
-                                        : bill.type === 'budget'
-                                        ? '#2563eb'
-                                        : '#dc2626',
-                                  }}
-                                >
-                                  {bill.type === 'income' ? '+' : '-'}
-                                  {formatCurrency(bill.amount)}
-                                </Text>
-                                {bill.type === 'budget'
-                                  ? null
-                                  : bill.type === 'liability' &&
+                                  title={
+                                    <Space>
+                                      <Text strong={bill.type === 'budget'}>
+                                        {bill.name}
+                                      </Text>
+                                      <Tag
+                                        color={getCategoryColor(
+                                          bill.type,
+                                          bill.category,
+                                          bill.payment_type
+                                        )}
+                                      >
+                                        {bill.type === 'budget'
+                                          ? 'Budget'
+                                          : bill.type === 'expense'
+                                          ? 'Recurring Expense'
+                                          : getCategoryLabel(
+                                              bill.type,
+                                              bill.category,
+                                              bill.payment_type,
+                                              bill.liability,
+                                              selectedYear,
+                                              selectedMonth
+                                            )}
+                                      </Tag>
+                                    </Space>
+                                  }
+                                  description={
+                                    bill.type === 'budget' &&
+                                    budgetRemaining !== null ? (
+                                      <Space direction="vertical" size={0}>
+                                        <Text
+                                          type="secondary"
+                                          style={{ fontSize: '12px' }}
+                                        >
+                                          Total: {formatCurrency(bill.amount)} •
+                                          Remaining:{' '}
+                                          <span
+                                            style={{
+                                              color:
+                                                budgetRemaining >= 0
+                                                  ? '#16a34a'
+                                                  : '#dc2626',
+                                              fontWeight: 600,
+                                            }}
+                                          >
+                                            {formatCurrency(budgetRemaining)}
+                                          </span>
+                                        </Text>
+                                      </Space>
+                                    ) : bill.source ? (
+                                      <Text
+                                        type="secondary"
+                                        style={{ fontSize: '12px' }}
+                                      >
+                                        {bill.source}
+                                      </Text>
+                                    ) : null
+                                  }
+                                />
+                                <Space>
+                                  <Text
+                                    strong
+                                    delete={
+                                      bill.type === 'budget'
+                                        ? false
+                                        : bill.isPaid ||
+                                          (bill.type === 'income' &&
+                                            bill.isReceived)
+                                    }
+                                    style={{
+                                      fontSize: '16px',
+                                      color:
+                                        bill.type === 'budget'
+                                          ? '#2563eb'
+                                          : bill.isPaid ||
+                                            (bill.type === 'income' &&
+                                              bill.isReceived)
+                                          ? '#9ca3af'
+                                          : bill.type === 'income'
+                                          ? '#16a34a'
+                                          : '#dc2626',
+                                    }}
+                                  >
+                                    {bill.type === 'income' ? '+' : '-'}
+                                    {formatCurrency(bill.amount)}
+                                  </Text>
+                                  {bill.type === 'budget'
+                                    ? null
+                                    : bill.type === 'liability' &&
+                                      !bill.isPaid && (
+                                        <Button
+                                          type="text"
+                                          size="small"
+                                          icon={<EditOutlined />}
+                                          onClick={() =>
+                                            handleEditLiabilityOverride(
+                                              bill,
+                                              selectedYear,
+                                              selectedMonth
+                                            )
+                                          }
+                                          style={{ color: '#1890ff' }}
+                                        />
+                                      )}
+                                  {bill.type === 'expense' &&
+                                    bill.frequency !== 'one_time' &&
                                     !bill.isPaid && (
                                       <Button
                                         type="text"
                                         size="small"
                                         icon={<EditOutlined />}
                                         onClick={() =>
-                                          handleEditLiabilityOverride(
+                                          handleEditExpenseOverride(
                                             bill,
                                             selectedYear,
                                             selectedMonth
@@ -2364,25 +2502,92 @@ export function CashFlow() {
                                         style={{ color: '#1890ff' }}
                                       />
                                     )}
-                                {bill.type === 'expense' &&
-                                  bill.frequency !== 'one_time' &&
-                                  !bill.isPaid && (
-                                    <Button
-                                      type="text"
-                                      size="small"
-                                      icon={<EditOutlined />}
-                                      onClick={() =>
-                                        handleEditExpenseOverride(
-                                          bill,
-                                          selectedYear,
-                                          selectedMonth
-                                        )
+                                </Space>
+                              </List.Item>
+                              {/* Render nested expenses for budgets */}
+                              {bill.type === 'budget' &&
+                                bill.budgetExpenses &&
+                                bill.budgetExpenses.length > 0 && (
+                                  <div
+                                    style={{ paddingLeft: 40, paddingTop: 8 }}
+                                  >
+                                    {bill.budgetExpenses.map(
+                                      (
+                                        expense: {
+                                          type: 'expense';
+                                          id: string;
+                                          name: string;
+                                          amount: number;
+                                          category: string;
+                                          dueDate: Date;
+                                          isPaid: boolean;
+                                          frequency?:
+                                            | 'monthly'
+                                            | 'weekly'
+                                            | 'one_time';
+                                        },
+                                        expIndex: number
+                                      ) => {
+                                        const expenseCompleted = expense.isPaid;
+                                        return (
+                                          <List.Item
+                                            key={`budget-expense-${expense.id}-${expIndex}`}
+                                            style={{
+                                              opacity: expenseCompleted
+                                                ? 0.6
+                                                : 1,
+                                              padding: '8px 0',
+                                              borderBottom:
+                                                expIndex <
+                                                bill.budgetExpenses!.length - 1
+                                                  ? '1px solid #f0f0f0'
+                                                  : 'none',
+                                            }}
+                                          >
+                                            <List.Item.Meta
+                                              avatar={
+                                                !expense.isPaid ? (
+                                                  <Checkbox
+                                                    checked={false}
+                                                    onChange={() =>
+                                                      handleMarkExpensePaid(
+                                                        expense,
+                                                        selectedYear,
+                                                        selectedMonth
+                                                      )
+                                                    }
+                                                  />
+                                                ) : null
+                                              }
+                                              title={
+                                                <Text
+                                                  delete={expenseCompleted}
+                                                  strong={!expenseCompleted}
+                                                  style={{ fontSize: '14px' }}
+                                                >
+                                                  {expense.name}
+                                                </Text>
+                                              }
+                                            />
+                                            <Text
+                                              strong
+                                              delete={expenseCompleted}
+                                              style={{
+                                                fontSize: '14px',
+                                                color: expenseCompleted
+                                                  ? '#9ca3af'
+                                                  : '#dc2626',
+                                              }}
+                                            >
+                                              -{formatCurrency(expense.amount)}
+                                            </Text>
+                                          </List.Item>
+                                        );
                                       }
-                                      style={{ color: '#1890ff' }}
-                                    />
-                                  )}
-                              </Space>
-                            </List.Item>
+                                    )}
+                                  </div>
+                                )}
+                            </div>
                           );
                         }}
                       />
@@ -2621,169 +2826,325 @@ export function CashFlow() {
                             <List
                               dataSource={dayBills}
                               renderItem={(bill, index) => {
+                                // Budgets are never completed (no strikethrough)
                                 const isCompleted =
-                                  bill.isPaid ||
-                                  (bill.type === 'income' && bill.isReceived);
+                                  bill.type === 'budget'
+                                    ? false
+                                    : bill.isPaid ||
+                                      (bill.type === 'income' &&
+                                        bill.isReceived);
+
+                                // Calculate budget remaining amount if it's a budget
+                                const budgetRemaining =
+                                  bill.type === 'budget' && bill.budgetExpenses
+                                    ? bill.amount -
+                                      bill.budgetExpenses
+                                        .filter(
+                                          (e: { isPaid: boolean }) => e.isPaid
+                                        )
+                                        .reduce(
+                                          (
+                                            sum: number,
+                                            e: { amount: number }
+                                          ) => sum + e.amount,
+                                          0
+                                        )
+                                    : null;
+
                                 return (
-                                  <List.Item
-                                    key={`${bill.type}-${bill.id}-${index}`}
-                                    style={{
-                                      opacity: isCompleted ? 0.6 : 1,
-                                      padding: '8px 0 8px 8px',
-                                      borderLeft: '2px solid #f0f0f0',
-                                    }}
-                                  >
-                                    <List.Item.Meta
-                                      avatar={
-                                        bill.type === 'liability' ? (
-                                          <Checkbox
-                                            checked={bill.isPaid}
-                                            disabled={bill.isPaid}
-                                            onChange={() =>
-                                              handleTogglePaid(
-                                                bill,
-                                                year,
-                                                month
-                                              )
-                                            }
-                                          />
-                                        ) : bill.type === 'expense' &&
-                                          !bill.isPaid ? (
-                                          <Checkbox
-                                            checked={false}
-                                            onChange={() =>
-                                              handleMarkExpensePaid(
-                                                bill,
-                                                year,
-                                                month
-                                              )
-                                            }
-                                          />
-                                        ) : bill.type === 'income' ? (
-                                          <Checkbox
-                                            checked={bill.isReceived || false}
-                                            disabled={bill.isReceived || false}
-                                            onChange={() => {
-                                              const originalIncome =
-                                                incomeSources?.find(
-                                                  (inc) =>
-                                                    inc.id === bill.id ||
-                                                    bill.id.startsWith(inc.id)
-                                                );
-                                              handleMarkIncomeReceived(
-                                                {
-                                                  id: bill.id,
-                                                  name: bill.name,
-                                                  amount: bill.amount,
-                                                  frequency:
-                                                    originalIncome?.frequency,
-                                                  category:
-                                                    originalIncome?.category,
-                                                },
-                                                year,
-                                                month
-                                              );
-                                            }}
-                                          />
-                                        ) : null
-                                      }
-                                      title={
-                                        <Space>
-                                          <Text
-                                            delete={isCompleted}
-                                            style={{ fontSize: '14px' }}
-                                          >
-                                            {bill.name}
-                                          </Text>
-                                          <Tag
-                                            color={getCategoryColor(
-                                              bill.type,
-                                              bill.category,
-                                              bill.payment_type
-                                            )}
-                                          >
-                                            {bill.type === 'expense'
-                                              ? 'Recurring Expense'
-                                              : getCategoryLabel(
-                                                  bill.type,
-                                                  bill.category,
-                                                  bill.payment_type,
-                                                  bill.liability,
+                                  <div key={`${bill.type}-${bill.id}-${index}`}>
+                                    <List.Item
+                                      style={{
+                                        opacity: isCompleted ? 0.6 : 1,
+                                        padding: '8px 0 8px 8px',
+                                        borderLeft: '2px solid #f0f0f0',
+                                      }}
+                                    >
+                                      <List.Item.Meta
+                                        avatar={
+                                          bill.type ===
+                                          'budget' ? null : bill.type ===
+                                            'liability' ? (
+                                            <Checkbox
+                                              checked={bill.isPaid}
+                                              disabled={bill.isPaid}
+                                              onChange={() =>
+                                                handleTogglePaid(
+                                                  bill,
                                                   year,
                                                   month
-                                                )}
-                                          </Tag>
-                                        </Space>
-                                      }
-                                      description={
-                                        bill.source ? (
-                                          <Text
-                                            type="secondary"
-                                            style={{ fontSize: '12px' }}
-                                          >
-                                            {bill.source}
-                                          </Text>
-                                        ) : null
-                                      }
-                                    />
-                                    <Space>
-                                      <Text
-                                        strong
-                                        delete={
-                                          bill.isPaid ||
-                                          (bill.type === 'income' &&
-                                            bill.isReceived)
+                                                )
+                                              }
+                                            />
+                                          ) : bill.type === 'expense' &&
+                                            !bill.isPaid ? (
+                                            <Checkbox
+                                              checked={false}
+                                              onChange={() =>
+                                                handleMarkExpensePaid(
+                                                  bill,
+                                                  year,
+                                                  month
+                                                )
+                                              }
+                                            />
+                                          ) : bill.type === 'income' ? (
+                                            <Checkbox
+                                              checked={bill.isReceived || false}
+                                              disabled={
+                                                bill.isReceived || false
+                                              }
+                                              onChange={() => {
+                                                const originalIncome =
+                                                  incomeSources?.find(
+                                                    (inc) =>
+                                                      inc.id === bill.id ||
+                                                      bill.id.startsWith(inc.id)
+                                                  );
+                                                handleMarkIncomeReceived(
+                                                  {
+                                                    id: bill.id,
+                                                    name: bill.name,
+                                                    amount: bill.amount,
+                                                    frequency:
+                                                      originalIncome?.frequency,
+                                                    category:
+                                                      originalIncome?.category,
+                                                  },
+                                                  year,
+                                                  month
+                                                );
+                                              }}
+                                            />
+                                          ) : null
                                         }
-                                        style={{
-                                          fontSize: '14px',
-                                          color:
-                                            bill.isPaid ||
-                                            (bill.type === 'income' &&
-                                              bill.isReceived)
-                                              ? '#9ca3af'
-                                              : bill.type === 'income'
-                                              ? '#16a34a'
-                                              : '#dc2626',
-                                        }}
-                                      >
-                                        {bill.type === 'income' ? '+' : '-'}
-                                        {formatCurrency(bill.amount)}
-                                      </Text>
-                                      {bill.type === 'liability' &&
-                                        !bill.isPaid && (
-                                          <Button
-                                            type="text"
-                                            size="small"
-                                            icon={<EditOutlined />}
-                                            onClick={() =>
-                                              handleEditLiabilityOverride(
-                                                bill,
-                                                year,
-                                                month
-                                              )
+                                        title={
+                                          <Space>
+                                            <Text
+                                              strong={bill.type === 'budget'}
+                                              style={{ fontSize: '14px' }}
+                                            >
+                                              {bill.name}
+                                            </Text>
+                                            <Tag
+                                              color={getCategoryColor(
+                                                bill.type,
+                                                bill.category,
+                                                bill.payment_type
+                                              )}
+                                            >
+                                              {bill.type === 'budget'
+                                                ? 'Budget'
+                                                : bill.type === 'expense'
+                                                ? 'Recurring Expense'
+                                                : getCategoryLabel(
+                                                    bill.type,
+                                                    bill.category,
+                                                    bill.payment_type,
+                                                    bill.liability,
+                                                    year,
+                                                    month
+                                                  )}
+                                            </Tag>
+                                          </Space>
+                                        }
+                                        description={
+                                          bill.type === 'budget' &&
+                                          budgetRemaining !== null ? (
+                                            <Space
+                                              direction="vertical"
+                                              size={0}
+                                            >
+                                              <Text
+                                                type="secondary"
+                                                style={{ fontSize: '12px' }}
+                                              >
+                                                Total:{' '}
+                                                {formatCurrency(bill.amount)} •
+                                                Remaining:{' '}
+                                                <span
+                                                  style={{
+                                                    color:
+                                                      budgetRemaining >= 0
+                                                        ? '#16a34a'
+                                                        : '#dc2626',
+                                                    fontWeight: 600,
+                                                  }}
+                                                >
+                                                  {formatCurrency(
+                                                    budgetRemaining
+                                                  )}
+                                                </span>
+                                              </Text>
+                                            </Space>
+                                          ) : bill.source ? (
+                                            <Text
+                                              type="secondary"
+                                              style={{ fontSize: '12px' }}
+                                            >
+                                              {bill.source}
+                                            </Text>
+                                          ) : null
+                                        }
+                                      />
+                                      <Space>
+                                        <Text
+                                          strong
+                                          delete={
+                                            bill.type === 'budget'
+                                              ? false
+                                              : bill.isPaid ||
+                                                (bill.type === 'income' &&
+                                                  bill.isReceived)
+                                          }
+                                          style={{
+                                            fontSize: '14px',
+                                            color:
+                                              bill.type === 'budget'
+                                                ? '#2563eb'
+                                                : bill.isPaid ||
+                                                  (bill.type === 'income' &&
+                                                    bill.isReceived)
+                                                ? '#9ca3af'
+                                                : bill.type === 'income'
+                                                ? '#16a34a'
+                                                : '#dc2626',
+                                          }}
+                                        >
+                                          {bill.type === 'income' ? '+' : '-'}
+                                          {formatCurrency(bill.amount)}
+                                        </Text>
+                                        {bill.type === 'budget'
+                                          ? null
+                                          : bill.type === 'liability' &&
+                                            !bill.isPaid && (
+                                              <Button
+                                                type="text"
+                                                size="small"
+                                                icon={<EditOutlined />}
+                                                onClick={() =>
+                                                  handleEditLiabilityOverride(
+                                                    bill,
+                                                    year,
+                                                    month
+                                                  )
+                                                }
+                                                style={{ color: '#1890ff' }}
+                                              />
+                                            )}
+                                        {bill.type === 'expense' &&
+                                          bill.frequency !== 'one_time' &&
+                                          !bill.isPaid && (
+                                            <Button
+                                              type="text"
+                                              size="small"
+                                              icon={<EditOutlined />}
+                                              onClick={() =>
+                                                handleEditExpenseOverride(
+                                                  bill,
+                                                  year,
+                                                  month
+                                                )
+                                              }
+                                              style={{ color: '#1890ff' }}
+                                            />
+                                          )}
+                                      </Space>
+                                    </List.Item>
+                                    {/* Render nested expenses for budgets */}
+                                    {bill.type === 'budget' &&
+                                      bill.budgetExpenses &&
+                                      bill.budgetExpenses.length > 0 && (
+                                        <div
+                                          style={{
+                                            paddingLeft: 40,
+                                            paddingTop: 8,
+                                          }}
+                                        >
+                                          {bill.budgetExpenses.map(
+                                            (
+                                              expense: {
+                                                type: 'expense';
+                                                id: string;
+                                                name: string;
+                                                amount: number;
+                                                category: string;
+                                                dueDate: Date;
+                                                isPaid: boolean;
+                                                frequency?:
+                                                  | 'monthly'
+                                                  | 'weekly'
+                                                  | 'one_time';
+                                              },
+                                              expIndex: number
+                                            ) => {
+                                              const expenseCompleted =
+                                                expense.isPaid;
+                                              return (
+                                                <List.Item
+                                                  key={`budget-expense-${expense.id}-${expIndex}`}
+                                                  style={{
+                                                    opacity: expenseCompleted
+                                                      ? 0.6
+                                                      : 1,
+                                                    padding: '6px 0 6px 8px',
+                                                    borderLeft:
+                                                      '2px solid #e5e7eb',
+                                                  }}
+                                                >
+                                                  <List.Item.Meta
+                                                    avatar={
+                                                      !expense.isPaid ? (
+                                                        <Checkbox
+                                                          checked={false}
+                                                          onChange={() =>
+                                                            handleMarkExpensePaid(
+                                                              expense,
+                                                              year,
+                                                              month
+                                                            )
+                                                          }
+                                                        />
+                                                      ) : null
+                                                    }
+                                                    title={
+                                                      <Text
+                                                        delete={
+                                                          expenseCompleted
+                                                        }
+                                                        strong={
+                                                          !expenseCompleted
+                                                        }
+                                                        style={{
+                                                          fontSize: '13px',
+                                                        }}
+                                                      >
+                                                        {expense.name}
+                                                      </Text>
+                                                    }
+                                                  />
+                                                  <Text
+                                                    strong
+                                                    delete={expenseCompleted}
+                                                    style={{
+                                                      fontSize: '13px',
+                                                      color: expenseCompleted
+                                                        ? '#9ca3af'
+                                                        : '#dc2626',
+                                                    }}
+                                                  >
+                                                    -
+                                                    {formatCurrency(
+                                                      expense.amount
+                                                    )}
+                                                  </Text>
+                                                </List.Item>
+                                              );
                                             }
-                                            style={{ color: '#1890ff' }}
-                                          />
-                                        )}
-                                      {bill.type === 'expense' &&
-                                        bill.frequency !== 'one_time' &&
-                                        !bill.isPaid && (
-                                          <Button
-                                            type="text"
-                                            size="small"
-                                            icon={<EditOutlined />}
-                                            onClick={() =>
-                                              handleEditExpenseOverride(
-                                                bill,
-                                                year,
-                                                month
-                                              )
-                                            }
-                                            style={{ color: '#1890ff' }}
-                                          />
-                                        )}
-                                    </Space>
-                                  </List.Item>
+                                          )}
+                                        </div>
+                                      )}
+                                  </div>
                                 );
                               }}
                             />

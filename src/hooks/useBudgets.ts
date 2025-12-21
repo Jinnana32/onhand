@@ -1,7 +1,8 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMemo } from 'react'
 import { supabase } from '../lib/supabase'
 import { ensureProfileExists } from '../lib/profile'
-import { Budget } from '../types/database.types'
+import { Budget, Expense } from '../types/database.types'
 import { queryKeys } from './queryKeys'
 
 // Helper function to update profile's current_cash
@@ -64,6 +65,39 @@ export function useBudgets() {
       return data as Budget[]
     },
   })
+
+  // Get all expenses to calculate remaining budget amounts
+  const { data: expenses = [] } = useQuery({
+    queryKey: queryKeys.expenses('current'),
+    queryFn: async () => {
+      const userId = await getCurrentUserId()
+      const { data, error } = await supabase
+        .from('expenses')
+        .select('*')
+        .eq('user_id', userId)
+
+      if (error) throw error
+      return data as Expense[]
+    },
+  })
+
+  // Calculate remaining amount for each budget
+  const budgetsWithRemaining = useMemo(() => {
+    return budgets.map((budget) => {
+      // Sum all paid expenses linked to this budget
+      const spentAmount = expenses
+        .filter((expense) => expense.budget_id === budget.id && expense.is_paid)
+        .reduce((sum, expense) => sum + expense.amount, 0)
+
+      const remainingAmount = budget.amount - spentAmount
+
+      return {
+        ...budget,
+        remainingAmount,
+        spentAmount,
+      }
+    })
+  }, [budgets, expenses])
 
   // Create budget
   const createMutation = useMutation({
@@ -166,6 +200,7 @@ export function useBudgets() {
 
   return {
     budgets,
+    budgetsWithRemaining, // Budgets with calculated remaining amounts
     isLoading,
     error,
     createBudget: createMutation.mutate,

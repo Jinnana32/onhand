@@ -66,6 +66,7 @@ export interface Expense {
   due_date: number | null // Day of month (1-31) for recurring expenses
   start_date: string | null // Date when recurring expense starts
   liability_id: string | null // Reference to liabilities table (when expense is a payment for a liability)
+  budget_id: string | null // Reference to budgets table (when expense is linked to a budget)
   is_active: boolean
   is_paid: boolean // Whether the expense has been paid
   created_at: string

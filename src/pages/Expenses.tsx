@@ -20,7 +20,7 @@ import {
 } from 'antd'
 import { PlusOutlined, EditOutlined, DeleteOutlined, SearchOutlined } from '@ant-design/icons'
 import dayjs, { Dayjs } from 'dayjs'
-import { useExpenses, useLiabilities } from '../hooks'
+import { useExpenses, useLiabilities, useBudgets } from '../hooks'
 import { Expense } from '../types/database.types'
 import { formatCurrency, formatDate } from '../lib/utils'
 
@@ -49,7 +49,8 @@ export function Expenses() {
     isUpdating,
   } = useExpenses()
   const { liabilities, isLoading: isLoadingLiabilities } = useLiabilities()
-  const isLoading = isLoadingExpenses || isLoadingLiabilities
+  const { budgets, isLoading: isLoadingBudgets } = useBudgets()
+  const isLoading = isLoadingExpenses || isLoadingLiabilities || isLoadingBudgets
 
   const [form] = Form.useForm()
   const [isModalOpen, setIsModalOpen] = useState(false)
@@ -83,6 +84,7 @@ export function Expenses() {
         expense_date: expense.frequency === 'one_time' ? dayjs(expense.expense_date) : undefined,
         start_date: expense.start_date ? dayjs(expense.start_date) : dayjs(),
         due_date: expense.due_date || undefined,
+        budget_id: expense.budget_id || undefined,
         is_active: expense.is_active !== undefined ? expense.is_active : true,
         is_paid: expense.is_paid !== undefined ? expense.is_paid : (expense.frequency === 'one_time' ? true : false),
       })
@@ -134,6 +136,7 @@ export function Expenses() {
         start_date: values.frequency !== 'one_time' 
           ? (values.start_date as Dayjs).format('YYYY-MM-DD')
           : null,
+        budget_id: values.budget_id || null,
         is_active: values.is_active,
         is_paid: values.is_paid ?? false,
     }
@@ -546,6 +549,22 @@ export function Expenses() {
                 </Option>
               ))}
             </Select>
+          </Form.Item>
+
+          <Form.Item
+            name="budget_id"
+            label="Link to Budget (Optional)"
+          >
+            <Select placeholder="Select a budget" allowClear>
+              {budgets?.filter((b) => b.is_active).map((budget) => (
+                <Option key={budget.id} value={budget.id}>
+                  {budget.name} ({formatCurrency(budget.amount)})
+                </Option>
+              ))}
+            </Select>
+            <div style={{ fontSize: '12px', color: '#6b7280', marginTop: 4 }}>
+              Link this expense to a budget. Budget-linked expenses deduct from the budget amount instead of cash on hand.
+            </div>
           </Form.Item>
 
           <Form.Item
