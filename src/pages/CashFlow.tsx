@@ -32,6 +32,8 @@ import {
   Form,
   InputNumber,
   DatePicker,
+  Input,
+  Switch,
 } from 'antd';
 import {
   LeftOutlined,
@@ -40,11 +42,23 @@ import {
   UnorderedListOutlined,
   FilterOutlined,
   EditOutlined,
+  PlusOutlined,
 } from '@ant-design/icons';
 import type { MenuProps } from 'antd';
 
 const { Title, Text } = Typography;
 const { Option } = Select;
+
+const expenseCategories = [
+  'Food',
+  'Transport',
+  'Shopping',
+  'Bills',
+  'Entertainment',
+  'Healthcare',
+  'Education',
+  'Other',
+];
 
 type ViewMode = 'calendar' | 'list';
 type FilterGroup =
@@ -147,6 +161,15 @@ export function CashFlow() {
     year: number;
     month: number;
   } | null>(null);
+  const [selectedBudgetForExpense, setSelectedBudgetForExpense] = useState<{
+    budget: {
+      id: string;
+      name: string;
+    };
+    year: number;
+    month: number;
+  } | null>(null);
+  const [budgetExpenseForm] = Form.useForm();
 
   // Get month name
   const monthNames = [
@@ -1872,6 +1895,50 @@ export function CashFlow() {
     liabilityOverrideForm.resetFields();
   };
 
+  // Handle creating expense for a budget
+  const handleSubmitBudgetExpense = async () => {
+    if (!selectedBudgetForExpense) return;
+
+    try {
+      const values = await budgetExpenseForm.validateFields();
+      const amount = values.amount;
+
+      if (isNaN(amount) || amount <= 0) {
+        message.error('Please enter a valid amount');
+        return;
+      }
+
+      const input = {
+        description: values.description,
+        amount,
+        category: values.category || null,
+        expense_date:
+          values.frequency === 'one_time'
+            ? (values.expense_date as Dayjs).format('YYYY-MM-DD')
+            : new Date().toISOString().split('T')[0],
+        frequency: values.frequency,
+        due_date: values.frequency !== 'one_time' ? values.due_date : null,
+        start_date:
+          values.frequency !== 'one_time'
+            ? (values.start_date as Dayjs).format('YYYY-MM-DD')
+            : null,
+        budget_id: values.budget_id || null,
+        is_active: values.is_active !== undefined ? values.is_active : true,
+        is_paid: values.is_paid ?? false,
+      };
+
+      await createExpenseAsync(input);
+      message.success('Expense created successfully');
+      setSelectedBudgetForExpense(null);
+      budgetExpenseForm.resetFields();
+    } catch (error) {
+      // Form validation errors are handled by Ant Design
+      if (error instanceof Error && !error.message.includes('validation')) {
+        message.error('Error creating expense: ' + error.message);
+      }
+    }
+  };
+
   // Handle marking income as received
   const handleMarkIncomeReceived = (
     income: {
@@ -2467,24 +2534,61 @@ export function CashFlow() {
                                     {bill.type === 'income' ? '+' : '-'}
                                     {formatCurrency(bill.amount)}
                                   </Text>
-                                  {bill.type === 'budget'
-                                    ? null
-                                    : bill.type === 'liability' &&
-                                      !bill.isPaid && (
-                                        <Button
-                                          type="text"
-                                          size="small"
-                                          icon={<EditOutlined />}
-                                          onClick={() =>
-                                            handleEditLiabilityOverride(
-                                              bill,
-                                              selectedYear,
-                                              selectedMonth
-                                            )
-                                          }
-                                          style={{ color: '#1890ff' }}
-                                        />
-                                      )}
+                                  {bill.type === 'budget' ? (
+                                    <Button
+                                      type="text"
+                                      size="small"
+                                      icon={<PlusOutlined />}
+                                      onClick={() => {
+                                        const budget = budgets?.find(
+                                          (b) => b.id === bill.id
+                                        );
+                                        if (budget) {
+                                          setSelectedBudgetForExpense({
+                                            budget: {
+                                              id: budget.id,
+                                              name: budget.name,
+                                            },
+                                            year: selectedYear,
+                                            month: selectedMonth,
+                                          });
+                                          budgetExpenseForm.resetFields();
+                                          budgetExpenseForm.setFieldsValue({
+                                            budget_id: budget.id,
+                                            frequency: 'one_time',
+                                            expense_date: dayjs(
+                                              new Date(
+                                                selectedYear,
+                                                selectedMonth,
+                                                1
+                                              )
+                                            ),
+                                            is_paid: false,
+                                          });
+                                        }
+                                      }}
+                                      style={{ color: '#1890ff' }}
+                                    >
+                                      Add Expense
+                                    </Button>
+                                  ) : (
+                                    bill.type === 'liability' &&
+                                    !bill.isPaid && (
+                                      <Button
+                                        type="text"
+                                        size="small"
+                                        icon={<EditOutlined />}
+                                        onClick={() =>
+                                          handleEditLiabilityOverride(
+                                            bill,
+                                            selectedYear,
+                                            selectedMonth
+                                          )
+                                        }
+                                        style={{ color: '#1890ff' }}
+                                      />
+                                    )
+                                  )}
                                   {bill.type === 'expense' &&
                                     bill.frequency !== 'one_time' &&
                                     !bill.isPaid && (
@@ -3014,24 +3118,59 @@ export function CashFlow() {
                                           {bill.type === 'income' ? '+' : '-'}
                                           {formatCurrency(bill.amount)}
                                         </Text>
-                                        {bill.type === 'budget'
-                                          ? null
-                                          : bill.type === 'liability' &&
-                                            !bill.isPaid && (
-                                              <Button
-                                                type="text"
-                                                size="small"
-                                                icon={<EditOutlined />}
-                                                onClick={() =>
-                                                  handleEditLiabilityOverride(
-                                                    bill,
-                                                    year,
-                                                    month
-                                                  )
-                                                }
-                                                style={{ color: '#1890ff' }}
-                                              />
-                                            )}
+                                        {bill.type === 'budget' ? (
+                                          <Button
+                                            type="text"
+                                            size="small"
+                                            icon={<PlusOutlined />}
+                                            onClick={() => {
+                                              const budget = budgets?.find(
+                                                (b) => b.id === bill.id
+                                              );
+                                              if (budget) {
+                                                setSelectedBudgetForExpense({
+                                                  budget: {
+                                                    id: budget.id,
+                                                    name: budget.name,
+                                                  },
+                                                  year,
+                                                  month,
+                                                });
+                                                budgetExpenseForm.resetFields();
+                                                budgetExpenseForm.setFieldsValue(
+                                                  {
+                                                    budget_id: budget.id,
+                                                    frequency: 'one_time',
+                                                    expense_date: dayjs(
+                                                      new Date(year, month, 1)
+                                                    ),
+                                                    is_paid: false,
+                                                  }
+                                                );
+                                              }
+                                            }}
+                                            style={{ color: '#1890ff' }}
+                                          >
+                                            Add Expense
+                                          </Button>
+                                        ) : (
+                                          bill.type === 'liability' &&
+                                          !bill.isPaid && (
+                                            <Button
+                                              type="text"
+                                              size="small"
+                                              icon={<EditOutlined />}
+                                              onClick={() =>
+                                                handleEditLiabilityOverride(
+                                                  bill,
+                                                  year,
+                                                  month
+                                                )
+                                              }
+                                              style={{ color: '#1890ff' }}
+                                            />
+                                          )
+                                        )}
                                         {bill.type === 'expense' &&
                                           bill.frequency !== 'one_time' &&
                                           !bill.isPaid && (
@@ -3547,6 +3686,180 @@ export function CashFlow() {
               min={0}
               placeholder="0.00"
             />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      {/* Budget Expense Creation Modal */}
+      <Modal
+        title={`Add Expense to ${
+          selectedBudgetForExpense?.budget.name || 'Budget'
+        }`}
+        open={!!selectedBudgetForExpense}
+        onCancel={() => {
+          setSelectedBudgetForExpense(null);
+          budgetExpenseForm.resetFields();
+        }}
+        onOk={budgetExpenseForm.submit}
+        okText="Create Expense"
+        cancelText="Cancel"
+        width={600}
+      >
+        <Form
+          form={budgetExpenseForm}
+          layout="vertical"
+          onFinish={handleSubmitBudgetExpense}
+        >
+          <Form.Item
+            name="description"
+            label="Description"
+            rules={[{ required: true, message: 'Please enter a description' }]}
+          >
+            <Input placeholder="e.g., Groceries, Coffee, Uber ride" />
+          </Form.Item>
+
+          <Form.Item
+            name="amount"
+            label="Amount (₱)"
+            rules={[
+              { required: true, message: 'Please enter an amount' },
+              {
+                type: 'number',
+                min: 0.01,
+                message: 'Amount must be greater than 0',
+              },
+            ]}
+          >
+            <InputNumber
+              style={{ width: '100%' }}
+              prefix="₱"
+              step={0.01}
+              min={0}
+              placeholder="0.00"
+            />
+          </Form.Item>
+
+          <Form.Item name="category" label="Category (Optional)">
+            <Select placeholder="Select a category" allowClear>
+              {expenseCategories.map((cat) => (
+                <Option key={cat} value={cat}>
+                  {cat}
+                </Option>
+              ))}
+            </Select>
+          </Form.Item>
+
+          <Form.Item name="budget_id" hidden>
+            <Input />
+          </Form.Item>
+
+          <Form.Item
+            name="frequency"
+            label="Frequency"
+            rules={[{ required: true }]}
+          >
+            <Select>
+              <Option value="one_time">One Time</Option>
+              <Option value="monthly">Monthly (Recurring)</Option>
+              <Option value="weekly">Weekly (Recurring)</Option>
+            </Select>
+          </Form.Item>
+
+          <Form.Item
+            noStyle
+            shouldUpdate={(prevValues, currentValues) =>
+              prevValues.frequency !== currentValues.frequency
+            }
+          >
+            {({ getFieldValue }) => {
+              const frequency = getFieldValue('frequency');
+              if (frequency === 'one_time') {
+                return (
+                  <>
+                    <Form.Item
+                      name="expense_date"
+                      label="Date"
+                      rules={[
+                        { required: true, message: 'Please select a date' },
+                      ]}
+                    >
+                      <DatePicker style={{ width: '100%' }} />
+                    </Form.Item>
+                    <Form.Item
+                      name="is_paid"
+                      valuePropName="checked"
+                      label="Paid"
+                    >
+                      <Switch />
+                      <div
+                        style={{
+                          fontSize: '12px',
+                          color: '#6b7280',
+                          marginTop: 4,
+                        }}
+                      >
+                        Mark as paid if you've already paid this expense. Unpaid
+                        expenses won't deduct from the budget amount.
+                      </div>
+                    </Form.Item>
+                  </>
+                );
+              }
+              return (
+                <>
+                  <Form.Item
+                    name="start_date"
+                    label="Start Date"
+                    rules={[
+                      { required: true, message: 'Please select a start date' },
+                    ]}
+                  >
+                    <DatePicker style={{ width: '100%' }} />
+                  </Form.Item>
+                  <Form.Item
+                    name="due_date"
+                    label="Due Date (Day of Month, 1-31)"
+                    rules={[
+                      { required: true, message: 'Please enter a due date' },
+                      {
+                        type: 'number',
+                        min: 1,
+                        max: 31,
+                        message: 'Due date must be between 1 and 31',
+                      },
+                    ]}
+                  >
+                    <InputNumber
+                      style={{ width: '100%' }}
+                      min={1}
+                      max={31}
+                      placeholder="15"
+                    />
+                  </Form.Item>
+                  <Form.Item name="is_active" valuePropName="checked">
+                    <Switch />
+                    <span style={{ marginLeft: 8 }}>Active</span>
+                  </Form.Item>
+                  <Form.Item
+                    name="is_paid"
+                    valuePropName="checked"
+                    label="Paid"
+                  >
+                    <Switch />
+                    <div
+                      style={{
+                        fontSize: '12px',
+                        color: '#6b7280',
+                        marginTop: 4,
+                      }}
+                    >
+                      Mark as paid if you've already paid this expense. Unpaid
+                      expenses won't deduct from the budget amount.
+                    </div>
+                  </Form.Item>
+                </>
+              );
+            }}
           </Form.Item>
         </Form>
       </Modal>

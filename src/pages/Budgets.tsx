@@ -13,11 +13,13 @@ import {
   message,
   Empty,
   Card,
-  Skeleton
+  Skeleton,
+  Select,
+  Switch
 } from 'antd'
-import { PlusOutlined, EditOutlined, DeleteOutlined, SearchOutlined } from '@ant-design/icons'
+import { PlusOutlined, EditOutlined, DeleteOutlined, SearchOutlined, ShoppingOutlined } from '@ant-design/icons'
 import dayjs, { Dayjs } from 'dayjs'
-import { useBudgets, useProfile } from '../hooks'
+import { useBudgets, useProfile, useExpenses } from '../hooks'
 import { Budget } from '../types/database.types'
 import { formatCurrency, formatDate } from '../lib/utils'
 
@@ -34,9 +36,13 @@ export function Budgets() {
     isUpdating,
   } = useBudgets()
   const { profile } = useProfile()
+  const { createExpense, isCreating: isCreatingExpense } = useExpenses()
   const [form] = Form.useForm()
+  const [expenseForm] = Form.useForm()
   const [isModalOpen, setIsModalOpen] = useState(false)
+  const [isExpenseModalOpen, setIsExpenseModalOpen] = useState(false)
   const [editingBudget, setEditingBudget] = useState<Budget | null>(null)
+  const [selectedBudgetForExpense, setSelectedBudgetForExpense] = useState<Budget | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [searchText, setSearchText] = useState('')
 
@@ -123,6 +129,65 @@ export function Budgets() {
     }
   }
 
+  const handleOpenExpenseModal = (budget: Budget) => {
+    setSelectedBudgetForExpense(budget)
+    expenseForm.resetFields()
+    expenseForm.setFieldsValue({
+      budget_id: budget.id,
+      frequency: 'one_time',
+      expense_date: dayjs(),
+      is_paid: false,
+    })
+    setIsExpenseModalOpen(true)
+  }
+
+  const handleCloseExpenseModal = () => {
+    setIsExpenseModalOpen(false)
+    setSelectedBudgetForExpense(null)
+    expenseForm.resetFields()
+  }
+
+  const handleSubmitExpense = async () => {
+    try {
+      const values = await expenseForm.validateFields()
+      const amount = values.amount
+
+      if (isNaN(amount) || amount <= 0) {
+        message.error('Please enter a valid amount')
+        return
+      }
+
+      const input = {
+        description: values.description,
+        amount,
+        category: values.category || null,
+        expense_date: values.frequency === 'one_time' 
+          ? (values.expense_date as Dayjs).format('YYYY-MM-DD')
+          : new Date().toISOString().split('T')[0],
+        frequency: values.frequency,
+        due_date: values.frequency !== 'one_time' ? values.due_date : null,
+        start_date: values.frequency !== 'one_time' 
+          ? (values.start_date as Dayjs).format('YYYY-MM-DD')
+          : null,
+        budget_id: values.budget_id || null,
+        is_active: values.is_active !== undefined ? values.is_active : true,
+        is_paid: values.is_paid ?? false,
+      }
+
+      createExpense(input, {
+        onSuccess: () => {
+          message.success('Expense created successfully')
+          handleCloseExpenseModal()
+        },
+        onError: (error: Error) => {
+          message.error('Error creating expense: ' + (error instanceof Error ? error.message : 'Unknown error'))
+        },
+      })
+    } catch (error) {
+      // Form validation errors are handled by Ant Design
+    }
+  }
+
   const handleDelete = (id: string) => {
     setDeletingId(id)
     deleteBudget(id, {
@@ -188,6 +253,13 @@ export function Budgets() {
       align: 'right' as const,
       render: (_: unknown, budget: Budget) => (
         <Space>
+          <Button
+            type="link"
+            icon={<ShoppingOutlined />}
+            onClick={() => handleOpenExpenseModal(budget)}
+          >
+            Add Expense
+          </Button>
           <Button
             type="link"
             icon={<EditOutlined />}
@@ -358,6 +430,153 @@ export function Budgets() {
               <strong>Note:</strong> Creating this budget will deduct {form.getFieldValue('amount') ? formatCurrency(form.getFieldValue('amount')) : 'the amount'} from your available cash ({formatCurrency(profile.current_cash)}).
             </div>
           )}
+        </Form>
+      </Modal>
+
+      {/* Expense Creation Modal */}
+      <Modal
+        title={`Add Expense to ${selectedBudgetForExpense?.name || 'Budget'}`}
+        open={isExpenseModalOpen}
+        onCancel={handleCloseExpenseModal}
+        onOk={expenseForm.submit}
+        confirmLoading={isCreatingExpense}
+        okText="Create Expense"
+        cancelText="Cancel"
+        width={600}
+      >
+        <Form
+          form={expenseForm}
+          layout="vertical"
+          onFinish={handleSubmitExpense}
+        >
+          <Form.Item
+            name="description"
+            label="Description"
+            rules={[{ required: true, message: 'Please enter a description' }]}
+          >
+            <Input placeholder="e.g., Groceries, Coffee, Uber ride" />
+          </Form.Item>
+
+          <Form.Item
+            name="amount"
+            label="Amount (₱)"
+            rules={[
+              { required: true, message: 'Please enter an amount' },
+              { type: 'number', min: 0.01, message: 'Amount must be greater than 0' },
+            ]}
+          >
+            <InputNumber
+              style={{ width: '100%' }}
+              prefix="₱"
+              step={0.01}
+              min={0}
+              placeholder="0.00"
+            />
+          </Form.Item>
+
+          <Form.Item
+            name="category"
+            label="Category (Optional)"
+          >
+            <Select placeholder="Select a category" allowClear>
+              {expenseCategories.map((cat) => (
+                <Option key={cat} value={cat}>
+                  {cat}
+                </Option>
+              ))}
+            </Select>
+          </Form.Item>
+
+          <Form.Item name="budget_id" hidden>
+            <Input />
+          </Form.Item>
+
+          <Form.Item
+            name="frequency"
+            label="Frequency"
+            rules={[{ required: true }]}
+          >
+            <Select>
+              <Option value="one_time">One Time</Option>
+              <Option value="monthly">Monthly (Recurring)</Option>
+              <Option value="weekly">Weekly (Recurring)</Option>
+            </Select>
+          </Form.Item>
+
+          <Form.Item
+            noStyle
+            shouldUpdate={(prevValues, currentValues) => prevValues.frequency !== currentValues.frequency}
+          >
+            {({ getFieldValue }) => {
+              const frequency = getFieldValue('frequency')
+              if (frequency === 'one_time') {
+                return (
+                  <>
+                    <Form.Item
+                      name="expense_date"
+                      label="Date"
+                      rules={[{ required: true, message: 'Please select a date' }]}
+                    >
+                      <DatePicker style={{ width: '100%' }} />
+                    </Form.Item>
+                    <Form.Item
+                      name="is_paid"
+                      valuePropName="checked"
+                      label="Paid"
+                    >
+                      <Switch />
+                      <div style={{ fontSize: '12px', color: '#6b7280', marginTop: 4 }}>
+                        Mark as paid if you've already paid this expense. Unpaid expenses won't deduct from the budget amount.
+                      </div>
+                    </Form.Item>
+                  </>
+                )
+              }
+              return (
+                <>
+                  <Form.Item
+                    name="start_date"
+                    label="Start Date"
+                    rules={[{ required: true, message: 'Please select a start date' }]}
+                  >
+                    <DatePicker style={{ width: '100%' }} />
+                  </Form.Item>
+                  <Form.Item
+                    name="due_date"
+                    label="Due Date (Day of Month, 1-31)"
+                    rules={[
+                      { required: true, message: 'Please enter a due date' },
+                      { type: 'number', min: 1, max: 31, message: 'Due date must be between 1 and 31' },
+                    ]}
+                  >
+                    <InputNumber
+                      style={{ width: '100%' }}
+                      min={1}
+                      max={31}
+                      placeholder="15"
+                    />
+                  </Form.Item>
+                  <Form.Item
+                    name="is_active"
+                    valuePropName="checked"
+                  >
+                    <Switch />
+                    <span style={{ marginLeft: 8 }}>Active</span>
+                  </Form.Item>
+                  <Form.Item
+                    name="is_paid"
+                    valuePropName="checked"
+                    label="Paid"
+                  >
+                    <Switch />
+                    <div style={{ fontSize: '12px', color: '#6b7280', marginTop: 4 }}>
+                      Mark as paid if you've already paid this expense. Unpaid expenses won't deduct from the budget amount.
+                    </div>
+                  </Form.Item>
+                </>
+              )
+            }}
+          </Form.Item>
         </Form>
       </Modal>
     </div>
